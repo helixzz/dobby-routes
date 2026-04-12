@@ -32,20 +32,23 @@ def compute_complement(ipset: IPSet) -> list[str]:
 
 
 def annotate_routes(
-    operator_cidrs: dict[str, list[str]], all_cidrs: list[str]
+    operator_cidrs: dict[str, list[str]], all_merged: IPSet
 ) -> list[tuple[str, str]]:
-    # Pre-build IPSet per operator once for efficient membership checks
-    operator_sets: dict[str, IPSet] = {
-        op: IPSet(cidrs) for op, cidrs in operator_cidrs.items()
-    }
+    # Build annotated list: operator CIDRs keep their granularity and labels,
+    # remaining (APNIC-only) routes are labeled "CN".
+    operator_combined = IPSet()
+    labeled: list[tuple[str, str]] = []
+    for op, cidrs in operator_cidrs.items():
+        label = OPERATOR_INFO.get(op, op)
+        op_set = IPSet(cidrs)
+        operator_combined |= op_set
+        for net in op_set.iter_cidrs():
+            labeled.append((str(net), label))
 
-    result: list[tuple[str, str]] = []
-    for cidr in sorted(all_cidrs):
-        network = IPNetwork(cidr)
-        annotation = "CN"
-        for op, ipset in operator_sets.items():
-            if network in ipset:
-                annotation = OPERATOR_INFO.get(op, op)
-                break
-        result.append((cidr, annotation))
-    return result
+    # Routes in the merged set but not covered by any operator
+    remainder = all_merged - operator_combined
+    for net in remainder.iter_cidrs():
+        labeled.append((str(net), "CN"))
+
+    labeled.sort(key=lambda t: IPNetwork(t[0]))
+    return labeled

@@ -94,7 +94,7 @@ def _run(args: argparse.Namespace) -> None:
     logger.info("Optimized: %d routes", len(optimized))
 
     logger.info("Generating annotated routes...")
-    annotated = annotate_routes(operator_cidrs, optimized)
+    annotated = annotate_routes(operator_cidrs, merged)
 
     logger.info("Computing complement routes...")
     complement = compute_complement(merged)
