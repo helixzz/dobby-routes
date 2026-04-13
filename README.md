@@ -5,7 +5,7 @@ Generate optimized China mainland IP route tables from authoritative sources (AP
 ## Installation
 
 ```bash
-git clone https://github.com/your-username/dobby-routes.git
+git clone https://github.com/helixzz/dobby-routes.git
 cd dobby-routes
 pip install -e .
 ```
@@ -91,6 +91,18 @@ Inverse route table — the complement of the forward routes within the entire I
 | China Mobile | `gaoyifan/china-operator-ip` (cmcc.txt) | Daily |
 | CERNET | `gaoyifan/china-operator-ip` (cernet.txt) | Daily |
 | chnroutes2 | `misakaio/chnroutes2` | Hourly |
+
+## Pre-built Route Tables
+
+Route tables are updated daily via GitHub Actions and published to the [`data`](https://github.com/helixzz/dobby-routes/tree/data) branch.
+
+Direct download links:
+
+```
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_annotated.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_inverse.txt
+```
 
 ## Running Tests
 
