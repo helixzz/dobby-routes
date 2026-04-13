@@ -26,11 +26,37 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Generate route tables
-        run: |
-          PYTHONPATH=src python -m dobby_routes.cli --output-dir /tmp/dobby-output
+        run: PYTHONPATH=src python -m dobby_routes.cli --output-dir ./output
 
-      - name: Check out data branch
+      - name: Commit to main branch
+        id: commit-main
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add output/cn_routes_annotated.txt output/cn_routes.txt output/cn_routes_inverse.txt
+          if git diff --cached --quiet; then
+            echo "No changes detected."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            DATE=$(date -u +%Y-%m-%d)
+            ROUTES=$(grep -c '^[^#]' output/cn_routes.txt || true)
+            INVERSE=$(grep -c '^[^#]' output/cn_routes_inverse.txt || true)
+            git commit -m "data: update route tables ${DATE}" \
+              -m "Forward routes: ${ROUTES}" \
+              -m "Inverse routes: ${INVERSE}"
+            git push origin main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+            echo "routes=${ROUTES}" >> "$GITHUB_OUTPUT"
+            echo "inverse=${INVERSE}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update data branch
+        if: steps.commit-main.outputs.changed == 'true'
+        run: |
+          cp output/cn_routes_annotated.txt /tmp/
+          cp output/cn_routes.txt /tmp/
+          cp output/cn_routes_inverse.txt /tmp/
           git fetch origin data || true
           if git rev-parse --verify origin/data >/dev/null 2>&1; then
             git checkout data
@@ -38,27 +64,39 @@ jobs:
             git checkout --orphan data
             git rm -rf . 2>/dev/null || true
           fi
-
-      - name: Copy output files
-        run: |
-          cp -f /tmp/dobby-output/cn_routes_annotated.txt .
-          cp -f /tmp/dobby-output/cn_routes.txt .
-          cp -f /tmp/dobby-output/cn_routes_inverse.txt .
-
-      - name: Commit and push if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp /tmp/cn_routes_annotated.txt .
+          cp /tmp/cn_routes.txt .
+          cp /tmp/cn_routes_inverse.txt .
           git add cn_routes_annotated.txt cn_routes.txt cn_routes_inverse.txt
-          if git diff --cached --quiet; then
-            echo "No changes detected, skipping commit."
-          else
-            ROUTES=$(grep -c '^[^#]' cn_routes.txt || true)
-            INVERSE=$(grep -c '^[^#]' cn_routes_inverse.txt || true)
-            DATE=$(date -u +%Y-%m-%d)
-            git commit -m "data: update route tables ${DATE}" \
-              -m "Forward routes: ${ROUTES}" \
-              -m "Inverse routes: ${INVERSE}"
-            git push origin data
-            echo "Route tables updated and pushed."
-          fi
+          DATE=${{ steps.commit-main.outputs.date }}
+          git commit -m "data: update route tables ${DATE}"
+          git push origin data
+
+      - name: Create nightly release
+        if: steps.commit-main.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DATE=${{ steps.commit-main.outputs.date }}
+          ROUTES=${{ steps.commit-main.outputs.routes }}
+          INVERSE=${{ steps.commit-main.outputs.inverse }}
+          TAG="nightly-${DATE}"
+
+          gh release delete nightly --yes 2>/dev/null || true
+          git tag -d nightly 2>/dev/null || true
+          git push origin :refs/tags/nightly 2>/dev/null || true
+
+          git checkout main
+          gh release create "${TAG}" \
+            --title "Nightly ${DATE}" \
+            --notes "Auto-generated route tables (${DATE} UTC)
+
+          | File | Routes |
+          |------|--------|
+          | cn_routes.txt | ${ROUTES} |
+          | cn_routes_inverse.txt | ${INVERSE} |
+          | cn_routes_annotated.txt | ${ROUTES} (annotated) |" \
+            --latest \
+            output/cn_routes.txt \
+            output/cn_routes_annotated.txt \
+            output/cn_routes_inverse.txt
