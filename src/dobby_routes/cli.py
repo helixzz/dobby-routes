@@ -2,6 +2,9 @@ import argparse
 import logging
 import os
 import sys
+from datetime import datetime, timezone
+
+import requests
 
 from dobby_routes.fetcher import fetch_apnic, fetch_all_operators, fetch_chnroutes2
 from dobby_routes.optimizer import merge_routes, optimize_routes, compute_complement, annotate_routes
@@ -49,7 +52,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Interrupted")
         sys.exit(130)
-    except Exception as e:
+    except (requests.RequestException, ValueError, OSError) as e:
         logger.error("Fatal: %s", e)
         sys.exit(1)
 
@@ -107,9 +110,10 @@ def _run(args: argparse.Namespace) -> None:
     optimized_path = os.path.join(output_dir, "cn_routes.txt")
     complement_path = os.path.join(output_dir, "cn_routes_inverse.txt")
 
-    write_annotated(annotated_path, annotated)
-    write_optimized(optimized_path, optimized)
-    write_complement(complement_path, complement)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    write_annotated(annotated_path, annotated, timestamp)
+    write_optimized(optimized_path, optimized, timestamp)
+    write_complement(complement_path, complement, timestamp)
 
     logger.info("Done. Output written to %s/", output_dir)
     logger.info("  %s (%d routes)", annotated_path, len(annotated))

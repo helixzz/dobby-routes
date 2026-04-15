@@ -43,9 +43,23 @@ def parse_apnic_delegated(text: str) -> list[ApnicEntry]:
     return entries
 
 
+_MAX_IPV4 = int(ipaddress.IPv4Address("255.255.255.255"))
+
+
 def apnic_entry_to_cidrs(entry: ApnicEntry) -> list[str]:
-    start = ipaddress.IPv4Address(entry.start_ip)
-    end = ipaddress.IPv4Address(int(start) + entry.count - 1)
+    if entry.count <= 0:
+        logger.warning("Skipping APNIC entry with invalid count %d: %s", entry.count, entry.start_ip)
+        return []
+    try:
+        start = ipaddress.IPv4Address(entry.start_ip)
+    except ValueError:
+        logger.warning("Skipping APNIC entry with invalid IP: %s", entry.start_ip)
+        return []
+    end_int = int(start) + entry.count - 1
+    if end_int > _MAX_IPV4:
+        logger.warning("APNIC range overflows IPv4 space: %s+%d, clamping", entry.start_ip, entry.count)
+        end_int = _MAX_IPV4
+    end = ipaddress.IPv4Address(end_int)
     return [str(network) for network in ipaddress.summarize_address_range(start, end)]
 
 

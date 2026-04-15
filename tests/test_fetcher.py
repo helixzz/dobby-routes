@@ -1,10 +1,12 @@
 import pytest
+import requests
 from unittest.mock import patch, MagicMock
 from dobby_routes.fetcher import (
     APNIC_URL,
     GITHUB_OPERATOR_URLS,
     GITHUB_CHINA_URL,
     CHNROUTES2_URL,
+    _USER_AGENT,
     fetch_url,
     fetch_apnic,
     fetch_operator,
@@ -52,7 +54,7 @@ def test_fetch_url_returns_text():
     mock_get.assert_called_once_with(
         "https://example.com/data.txt",
         timeout=30,
-        headers={"User-Agent": "dobby-routes/0.1.0"},
+        headers={"User-Agent": _USER_AGENT},
     )
 
 
@@ -77,7 +79,7 @@ def test_fetch_url_custom_timeout():
     mock_get.assert_called_once_with(
         "https://example.com/",
         timeout=10,
-        headers={"User-Agent": "dobby-routes/0.1.0"},
+        headers={"User-Agent": _USER_AGENT},
     )
 
 
@@ -105,8 +107,8 @@ def test_fetch_operator_known():
     assert result == "chinanet data"
 
 
-def test_fetch_operator_unknown_raises_key_error():
-    with pytest.raises(KeyError):
+def test_fetch_operator_unknown_raises_value_error():
+    with pytest.raises(ValueError, match="Unknown operator"):
         fetch_operator("unknown_operator_xyz")
 
 
@@ -143,3 +145,58 @@ def test_fetch_chnroutes2_uses_chnroutes2_url():
     assert result == "chnroutes data"
     args, _ = mock_get.call_args
     assert args[0] == CHNROUTES2_URL
+
+
+@patch("dobby_routes.fetcher.time.sleep")
+def test_fetch_url_retries_on_connection_error(mock_sleep):
+    mock_response = MagicMock()
+    mock_response.text = "ok"
+    mock_response.raise_for_status = MagicMock()
+
+    with patch(
+        "dobby_routes.fetcher.requests.get",
+        side_effect=[requests.ConnectionError("fail"), mock_response],
+    ):
+        result = fetch_url("https://example.com/", retries=2)
+
+    assert result == "ok"
+    mock_sleep.assert_called_once_with(1)
+
+
+@patch("dobby_routes.fetcher.time.sleep")
+def test_fetch_url_raises_after_all_retries_exhausted(mock_sleep):
+    with patch(
+        "dobby_routes.fetcher.requests.get",
+        side_effect=requests.ConnectionError("fail"),
+    ):
+        with pytest.raises(requests.ConnectionError):
+            fetch_url("https://example.com/", retries=3)
+
+    assert mock_sleep.call_count == 2
+
+
+def test_fetch_url_no_retry_on_success():
+    mock_response = MagicMock()
+    mock_response.text = "data"
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=mock_response) as mock_get:
+        fetch_url("https://example.com/", retries=3)
+
+    mock_get.assert_called_once()
+
+
+@patch("dobby_routes.fetcher.time.sleep")
+def test_fetch_url_retries_on_http_error(mock_sleep):
+    error = requests.HTTPError(response=MagicMock(status_code=500))
+    mock_response = MagicMock()
+    mock_response.text = "recovered"
+    mock_response.raise_for_status = MagicMock()
+
+    with patch(
+        "dobby_routes.fetcher.requests.get",
+        side_effect=[MagicMock(raise_for_status=MagicMock(side_effect=error)), mock_response],
+    ):
+        result = fetch_url("https://example.com/", retries=2)
+
+    assert result == "recovered"

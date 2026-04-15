@@ -1,5 +1,5 @@
 import logging
-from netaddr import IPSet, IPNetwork, cidr_merge
+from netaddr import IPSet, IPNetwork, AddrFormatError
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ def merge_routes(cidr_lists: list[list[str]]) -> IPSet:
         for cidr in cidr_list:
             try:
                 result.add(IPNetwork(cidr))
-            except Exception as e:
+            except (ValueError, TypeError, AddrFormatError) as e:
                 logger.warning("Skipping invalid CIDR %r: %s", cidr, e)
     return result
 
@@ -34,21 +34,18 @@ def compute_complement(ipset: IPSet) -> list[str]:
 def annotate_routes(
     operator_cidrs: dict[str, list[str]], all_merged: IPSet
 ) -> list[tuple[str, str]]:
-    # Build annotated list: operator CIDRs keep their granularity and labels,
-    # remaining (APNIC-only) routes are labeled "CN".
     operator_combined = IPSet()
-    labeled: list[tuple[str, str]] = []
+    labeled: list[tuple[IPNetwork, str]] = []
     for op, cidrs in operator_cidrs.items():
         label = OPERATOR_INFO.get(op, op)
         op_set = IPSet(cidrs)
         operator_combined |= op_set
         for net in op_set.iter_cidrs():
-            labeled.append((str(net), label))
+            labeled.append((net, label))
 
-    # Routes in the merged set but not covered by any operator
     remainder = all_merged - operator_combined
     for net in remainder.iter_cidrs():
-        labeled.append((str(net), "CN"))
+        labeled.append((net, "CN"))
 
-    labeled.sort(key=lambda t: IPNetwork(t[0]))
-    return labeled
+    labeled.sort(key=lambda t: t[0])
+    return [(str(net), label) for net, label in labeled]

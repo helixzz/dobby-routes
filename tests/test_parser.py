@@ -128,3 +128,28 @@ def test_parse_cidr_list_normalizes_host_bits():
     text = "10.0.0.1/8\n"
     result = parse_cidr_list(text)
     assert result == ["10.0.0.0/8"]
+
+
+def test_apnic_entry_to_cidrs_invalid_ip():
+    entry = ApnicEntry(start_ip="999.999.999.999", count=256, date="20110414", status="allocated")
+    assert apnic_entry_to_cidrs(entry) == []
+
+
+def test_apnic_entry_to_cidrs_zero_count():
+    entry = ApnicEntry(start_ip="10.0.0.0", count=0, date="20110414", status="allocated")
+    assert apnic_entry_to_cidrs(entry) == []
+
+
+def test_apnic_entry_to_cidrs_negative_count():
+    entry = ApnicEntry(start_ip="10.0.0.0", count=-1, date="20110414", status="allocated")
+    assert apnic_entry_to_cidrs(entry) == []
+
+
+def test_apnic_entry_to_cidrs_overflow_clamps():
+    entry = ApnicEntry(start_ip="255.255.255.0", count=512, date="20110414", status="allocated")
+    cidrs = apnic_entry_to_cidrs(entry)
+    assert len(cidrs) > 0
+    import ipaddress
+    for cidr in cidrs:
+        net = ipaddress.IPv4Network(cidr)
+        assert int(net.broadcast_address) <= int(ipaddress.IPv4Address("255.255.255.255"))

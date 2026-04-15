@@ -21,12 +21,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -e .
 
       - name: Generate route tables
-        run: PYTHONPATH=src python -m dobby_routes.cli --output-dir ./output
+        run: dobby-routes --output-dir ./output
 
       - name: Commit to main branch
         id: commit-main

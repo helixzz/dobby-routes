@@ -4,7 +4,9 @@ from dobby_routes.output import write_annotated, write_optimized, write_compleme
 
 
 def test_write_annotated_creates_file(tmp_path):
-    filepath = str(tmp_path / "out" / "annotated.txt")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    filepath = str(out_dir / "annotated.txt")
     write_annotated(filepath, [("10.0.0.0/8", "CN")])
     assert os.path.exists(filepath)
 
@@ -42,7 +44,9 @@ def test_write_annotated_empty_routes(tmp_path):
 
 
 def test_write_optimized_creates_file(tmp_path):
-    filepath = str(tmp_path / "out" / "optimized.txt")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    filepath = str(out_dir / "optimized.txt")
     write_optimized(filepath, ["10.0.0.0/8"])
     assert os.path.exists(filepath)
 
@@ -80,7 +84,9 @@ def test_write_optimized_no_annotation(tmp_path):
 
 
 def test_write_complement_creates_file(tmp_path):
-    filepath = str(tmp_path / "out" / "complement.txt")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    filepath = str(out_dir / "complement.txt")
     write_complement(filepath, ["1.0.0.0/8"])
     assert os.path.exists(filepath)
 
@@ -107,3 +113,16 @@ def test_write_complement_body_format(tmp_path):
     content = open(filepath).read()
     assert "1.0.0.0/8\n" in content
     assert "2.0.0.0/8\n" in content
+
+
+def test_write_functions_use_shared_timestamp(tmp_path):
+    ts = "2025-01-01 00:00:00"
+    a = str(tmp_path / "a.txt")
+    o = str(tmp_path / "o.txt")
+    c = str(tmp_path / "c.txt")
+    write_annotated(a, [("10.0.0.0/8", "CN")], timestamp=ts)
+    write_optimized(o, ["10.0.0.0/8"], timestamp=ts)
+    write_complement(c, ["10.0.0.0/8"], timestamp=ts)
+    for path in (a, o, c):
+        content = open(path).read()
+        assert ts in content
