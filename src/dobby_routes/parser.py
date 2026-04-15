@@ -2,7 +2,6 @@ import ipaddress
 import logging
 from dataclasses import dataclass
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -48,7 +47,11 @@ _MAX_IPV4 = int(ipaddress.IPv4Address("255.255.255.255"))
 
 def apnic_entry_to_cidrs(entry: ApnicEntry) -> list[str]:
     if entry.count <= 0:
-        logger.warning("Skipping APNIC entry with invalid count %d: %s", entry.count, entry.start_ip)
+        logger.warning(
+            "Skipping APNIC entry with invalid count %d: %s",
+            entry.count,
+            entry.start_ip,
+        )
         return []
     try:
         start = ipaddress.IPv4Address(entry.start_ip)
@@ -57,7 +60,11 @@ def apnic_entry_to_cidrs(entry: ApnicEntry) -> list[str]:
         return []
     end_int = int(start) + entry.count - 1
     if end_int > _MAX_IPV4:
-        logger.warning("APNIC range overflows IPv4 space: %s+%d, clamping", entry.start_ip, entry.count)
+        logger.warning(
+            "APNIC range overflows IPv4 space: %s+%d, clamping",
+            entry.start_ip,
+            entry.count,
+        )
         end_int = _MAX_IPV4
     end = ipaddress.IPv4Address(end_int)
     return [str(network) for network in ipaddress.summarize_address_range(start, end)]

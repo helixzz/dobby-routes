@@ -1,6 +1,6 @@
 import os
-import pytest
-from dobby_routes.output import write_annotated, write_optimized, write_complement
+
+from dobby_routes.output import write_annotated, write_complement, write_optimized
 
 
 def test_write_annotated_creates_file(tmp_path):
@@ -79,7 +79,7 @@ def test_write_optimized_no_annotation(tmp_path):
     filepath = str(tmp_path / "optimized.txt")
     write_optimized(filepath, ["10.0.0.0/8"])
     lines = open(filepath).readlines()
-    data_lines = [l for l in lines if not l.startswith("#") and l.strip()]
+    data_lines = [line for line in lines if not line.startswith("#") and line.strip()]
     assert all("#" not in line for line in data_lines)
 
 

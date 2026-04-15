@@ -4,11 +4,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-
 logger = logging.getLogger(__name__)
 
 try:
     from importlib.metadata import version as _pkg_version
+
     _USER_AGENT = f"dobby-routes/{_pkg_version('dobby-routes')}"
 except Exception:
     _USER_AGENT = "dobby-routes/dev"
@@ -33,17 +33,22 @@ def fetch_url(url: str, timeout: int = DEFAULT_TIMEOUT, retries: int = DEFAULT_R
     for attempt in range(retries):
         try:
             response = requests.get(
-                url, timeout=timeout, headers={"User-Agent": _USER_AGENT},
+                url,
+                timeout=timeout,
+                headers={"User-Agent": _USER_AGENT},
             )
             response.raise_for_status()
             return response.text
         except requests.RequestException as e:
             last_exc = e
             if attempt < retries - 1:
-                wait = 2 ** attempt
+                wait = 2**attempt
                 logger.warning(
                     "Fetch failed (attempt %d/%d), retrying in %ds: %s",
-                    attempt + 1, retries, wait, e,
+                    attempt + 1,
+                    retries,
+                    wait,
+                    e,
                 )
                 time.sleep(wait)
     raise last_exc  # type: ignore[misc]
@@ -63,8 +68,7 @@ def fetch_all_operators() -> dict[str, str]:
     results: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
-            executor.submit(fetch_url, url): name
-            for name, url in GITHUB_OPERATOR_URLS.items()
+            executor.submit(fetch_url, url): name for name, url in GITHUB_OPERATOR_URLS.items()
         }
         for future in as_completed(futures):
             name = futures[future]

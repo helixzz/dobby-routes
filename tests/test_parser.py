@@ -1,6 +1,9 @@
-import pytest
-from dobby_routes.parser import ApnicEntry, parse_apnic_delegated, apnic_entry_to_cidrs, parse_cidr_list
-
+from dobby_routes.parser import (
+    ApnicEntry,
+    apnic_entry_to_cidrs,
+    parse_apnic_delegated,
+    parse_cidr_list,
+)
 
 SAMPLE_APNIC = """\
 # comment line
@@ -82,7 +85,6 @@ def test_apnic_entry_to_cidrs_single_ip():
 def test_apnic_entry_to_cidrs_non_power_of_2_768():
     entry = ApnicEntry(start_ip="192.168.0.0", count=768, date="20110414", status="allocated")
     cidrs = apnic_entry_to_cidrs(entry)
-    import ipaddress
     total_ips = sum(2 ** (32 - int(c.split("/")[1])) for c in cidrs)
     assert total_ips == 768
     assert len(cidrs) > 1
@@ -150,6 +152,7 @@ def test_apnic_entry_to_cidrs_overflow_clamps():
     cidrs = apnic_entry_to_cidrs(entry)
     assert len(cidrs) > 0
     import ipaddress
+
     for cidr in cidrs:
         net = ipaddress.IPv4Network(cidr)
         assert int(net.broadcast_address) <= int(ipaddress.IPv4Address("255.255.255.255"))

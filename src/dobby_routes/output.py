@@ -1,10 +1,11 @@
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
 
 def write_annotated(
-    filepath: str, annotated_routes: list[tuple[str, str]], timestamp: Optional[str] = None,
+    filepath: str,
+    annotated_routes: list[tuple[str, str]],
+    timestamp: Optional[str] = None,
 ) -> None:
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -18,7 +19,9 @@ def write_annotated(
 
 
 def write_optimized(
-    filepath: str, cidrs: list[str], timestamp: Optional[str] = None,
+    filepath: str,
+    cidrs: list[str],
+    timestamp: Optional[str] = None,
 ) -> None:
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -32,7 +35,9 @@ def write_optimized(
 
 
 def write_complement(
-    filepath: str, cidrs: list[str], timestamp: Optional[str] = None,
+    filepath: str,
+    cidrs: list[str],
+    timestamp: Optional[str] = None,
 ) -> None:
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

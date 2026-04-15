@@ -1,9 +1,10 @@
 import os
-import pytest
-from unittest.mock import patch, MagicMock
 from argparse import Namespace
+from unittest.mock import patch
 
-from dobby_routes.cli import build_arg_parser, main, _run
+import pytest
+
+from dobby_routes.cli import _run, build_arg_parser, main
 
 
 def test_default_args():
@@ -46,8 +47,7 @@ def test_verbose_long_flag():
 
 
 SAMPLE_APNIC = (
-    "apnic|CN|ipv4|1.0.1.0|256|20110414|allocated\n"
-    "apnic|CN|ipv4|1.0.2.0|512|20110414|allocated\n"
+    "apnic|CN|ipv4|1.0.1.0|256|20110414|allocated\napnic|CN|ipv4|1.0.2.0|512|20110414|allocated\n"
 )
 SAMPLE_OPERATOR = "1.0.1.0/24\n"
 SAMPLE_CHNROUTES2 = "1.0.2.0/23\n"
@@ -134,7 +134,9 @@ def test_annotated_output_has_operator_labels(mock_apnic, mock_ops, mock_chn, tm
 def test_inverse_output_is_complement(mock_apnic, mock_ops, mock_chn, tmp_path):
     _run(_make_args(tmp_path))
     content = open(os.path.join(str(tmp_path), "cn_routes_inverse.txt")).read()
-    data_lines = [l.strip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
+    data_lines = [
+        line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")
+    ]
     assert "1.0.1.0/24" not in data_lines
     assert "1.0.2.0/23" not in data_lines
 

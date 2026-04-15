@@ -11,6 +11,7 @@ def mock_http_response():
         response.status_code = status_code
         response.raise_for_status = MagicMock()
         return response
+
     return _make
 
 

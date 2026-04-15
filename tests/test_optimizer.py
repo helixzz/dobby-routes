@@ -1,6 +1,11 @@
-import pytest
-from netaddr import IPSet, IPNetwork
-from dobby_routes.optimizer import merge_routes, optimize_routes, compute_complement, annotate_routes
+from netaddr import IPNetwork, IPSet
+
+from dobby_routes.optimizer import (
+    annotate_routes,
+    compute_complement,
+    merge_routes,
+    optimize_routes,
+)
 
 
 def test_merge_routes_single_list():

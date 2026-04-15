@@ -1,17 +1,19 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 import requests
-from unittest.mock import patch, MagicMock
+
 from dobby_routes.fetcher import (
-    APNIC_URL,
-    GITHUB_OPERATOR_URLS,
-    GITHUB_CHINA_URL,
-    CHNROUTES2_URL,
     _USER_AGENT,
-    fetch_url,
-    fetch_apnic,
-    fetch_operator,
+    APNIC_URL,
+    CHNROUTES2_URL,
+    GITHUB_CHINA_URL,
+    GITHUB_OPERATOR_URLS,
     fetch_all_operators,
+    fetch_apnic,
     fetch_chnroutes2,
+    fetch_operator,
+    fetch_url,
 )
 
 

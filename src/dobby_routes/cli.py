@@ -6,10 +6,15 @@ from datetime import datetime, timezone
 
 import requests
 
-from dobby_routes.fetcher import fetch_apnic, fetch_all_operators, fetch_chnroutes2
-from dobby_routes.optimizer import merge_routes, optimize_routes, compute_complement, annotate_routes
-from dobby_routes.output import write_annotated, write_optimized, write_complement
-from dobby_routes.parser import parse_apnic_delegated, apnic_entry_to_cidrs, parse_cidr_list
+from dobby_routes.fetcher import fetch_all_operators, fetch_apnic, fetch_chnroutes2
+from dobby_routes.optimizer import (
+    annotate_routes,
+    compute_complement,
+    merge_routes,
+    optimize_routes,
+)
+from dobby_routes.output import write_annotated, write_complement, write_optimized
+from dobby_routes.parser import apnic_entry_to_cidrs, parse_apnic_delegated, parse_cidr_list
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +25,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Generate China mainland IP route tables",
     )
     parser.add_argument(
-        "--output-dir", default="./output",
+        "--output-dir",
+        default="./output",
         help="output directory (default: ./output)",
     )
     parser.add_argument(
-        "--skip-github", action="store_true",
+        "--skip-github",
+        action="store_true",
         help="skip GitHub data sources",
     )
     parser.add_argument(
-        "--skip-apnic", action="store_true",
+        "--skip-apnic",
+        action="store_true",
         help="skip APNIC data source",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true",
+        "-v",
+        "--verbose",
+        action="store_true",
         help="enable debug logging",
     )
     return parser

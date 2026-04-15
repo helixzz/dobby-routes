@@ -1,5 +1,6 @@
 import logging
-from netaddr import IPSet, IPNetwork, AddrFormatError
+
+from netaddr import AddrFormatError, IPNetwork, IPSet
 
 logger = logging.getLogger(__name__)
 
