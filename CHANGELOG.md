@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0] - 2025-04-16
+## [0.2.0] - 2026-04-16
 
 ### Added
 - Non-routable IPv4 filtering: all IANA special-purpose, multicast, and reserved ranges are excluded from route tables
@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `cli.py` pipeline applies `filter_non_routable()` after merge, before optimize/annotate/complement
 - Forward routes are defensively filtered to catch upstream data errors from APNIC or GitHub sources
 
-## [0.1.1] - 2025-04-15
+## [0.1.1] - 2026-04-15
 
 ### Added
 - Retry with exponential backoff for HTTP fetches (3 attempts, 1s/2s/4s waits)
@@ -49,7 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Ruff lint violations: import sorting, unused imports, ambiguous variable names, long lines
 
-## [0.1.0] - 2025-04-13
+## [0.1.0] - 2026-04-13
 
 ### Added
 - Initial release
