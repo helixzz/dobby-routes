@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2025-04-16
+
+### Added
+- Non-routable IPv4 filtering: all IANA special-purpose, multicast, and reserved ranges are excluded from route tables
+- `NON_ROUTABLE_RANGES` constant in `optimizer.py` with 18 CIDR blocks covering RFC 1918, RFC 6598 (CGNAT), RFC 1122 (loopback), RFC 3927 (link-local), RFC 5737 (documentation), RFC 5771 (multicast), RFC 1112 (reserved), and more
+- `filter_non_routable()` function removes private/reserved ranges from merged routes
+- `ROUTABLE_UNIVERSE` constant: `0.0.0.0/0` minus all non-routable ranges
+- 9 new tests for non-routable filtering (RFC 1918, CGNAT, loopback, link-local, multicast, reserved, documentation nets, complement exclusion, routable universe integrity)
+
+### Changed
+- `compute_complement()` now subtracts from `ROUTABLE_UNIVERSE` instead of `0.0.0.0/0`, ensuring inverse route tables never contain private/reserved ranges
+- `cli.py` pipeline applies `filter_non_routable()` after merge, before optimize/annotate/complement
+- Forward routes are defensively filtered to catch upstream data errors from APNIC or GitHub sources
+
 ## [0.1.1] - 2025-04-15
 
 ### Added

@@ -10,6 +10,7 @@ from dobby_routes.fetcher import fetch_all_operators, fetch_apnic, fetch_chnrout
 from dobby_routes.optimizer import (
     annotate_routes,
     compute_complement,
+    filter_non_routable,
     merge_routes,
     optimize_routes,
 )
@@ -103,6 +104,7 @@ def _run(args: argparse.Namespace) -> None:
 
     logger.info("Merging and optimizing routes...")
     merged = merge_routes(all_cidr_lists)
+    merged = filter_non_routable(merged)
     optimized = optimize_routes(merged)
     logger.info("Optimized: %d routes", len(optimized))
 

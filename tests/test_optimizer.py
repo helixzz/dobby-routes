@@ -1,8 +1,11 @@
 from netaddr import IPNetwork, IPSet
 
 from dobby_routes.optimizer import (
+    NON_ROUTABLE_SET,
+    ROUTABLE_UNIVERSE,
     annotate_routes,
     compute_complement,
+    filter_non_routable,
     merge_routes,
     optimize_routes,
 )
@@ -71,14 +74,15 @@ def test_compute_complement_of_10_slash_8():
     assert "10.0.0.0/8" not in complement
     complement_set = IPSet(complement)
     assert IPNetwork("10.0.0.0/8") not in complement_set
-    assert IPNetwork("192.168.0.0/24") in complement_set
+    for cidr in complement:
+        assert IPNetwork(cidr) not in NON_ROUTABLE_SET
 
 
-def test_compute_complement_plus_original_equals_all():
-    ipset = IPSet(["10.0.0.0/8"])
+def test_compute_complement_plus_original_equals_routable():
+    ipset = IPSet(["1.0.0.0/8"])
     complement = compute_complement(ipset)
     combined = IPSet(complement) | ipset
-    assert combined == IPSet(["0.0.0.0/0"])
+    assert combined == ROUTABLE_UNIVERSE
 
 
 def test_compute_complement_returns_sorted():
@@ -126,3 +130,70 @@ def test_annotate_routes_unicom():
 def test_annotate_routes_empty():
     result = annotate_routes({}, IPSet())
     assert result == []
+
+
+def test_filter_non_routable_removes_rfc1918():
+    ipset = IPSet(["1.0.0.0/24", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"])
+    result = filter_non_routable(ipset)
+    assert IPNetwork("1.0.0.0/24") in result
+    assert IPNetwork("10.0.0.0/8") not in result
+    assert IPNetwork("172.16.0.0/12") not in result
+    assert IPNetwork("192.168.0.0/16") not in result
+
+
+def test_filter_non_routable_removes_cgnat():
+    ipset = IPSet(["1.0.0.0/24", "100.64.0.0/10"])
+    result = filter_non_routable(ipset)
+    assert IPNetwork("100.64.0.0/10") not in result
+    assert IPNetwork("1.0.0.0/24") in result
+
+
+def test_filter_non_routable_removes_loopback_and_linklocal():
+    ipset = IPSet(["127.0.0.0/8", "169.254.0.0/16", "8.8.8.0/24"])
+    result = filter_non_routable(ipset)
+    assert IPNetwork("127.0.0.0/8") not in result
+    assert IPNetwork("169.254.0.0/16") not in result
+    assert IPNetwork("8.8.8.0/24") in result
+
+
+def test_filter_non_routable_removes_multicast_and_reserved():
+    ipset = IPSet(["224.0.0.0/4", "240.0.0.0/4", "1.2.3.0/24"])
+    result = filter_non_routable(ipset)
+    assert IPNetwork("224.0.0.0/4") not in result
+    assert IPNetwork("240.0.0.0/4") not in result
+    assert IPNetwork("1.2.3.0/24") in result
+
+
+def test_filter_non_routable_removes_documentation_nets():
+    ipset = IPSet(["192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "1.1.1.0/24"])
+    result = filter_non_routable(ipset)
+    assert IPNetwork("192.0.2.0/24") not in result
+    assert IPNetwork("198.51.100.0/24") not in result
+    assert IPNetwork("203.0.113.0/24") not in result
+    assert IPNetwork("1.1.1.0/24") in result
+
+
+def test_filter_non_routable_preserves_public_only():
+    public = ["1.0.0.0/8", "8.8.8.0/24", "114.114.114.0/24"]
+    ipset = IPSet(public)
+    result = filter_non_routable(ipset)
+    assert result == ipset
+
+
+def test_filter_non_routable_empty():
+    result = filter_non_routable(IPSet())
+    assert result == IPSet()
+
+
+def test_complement_excludes_all_non_routable():
+    ipset = IPSet(["1.0.0.0/8"])
+    complement = compute_complement(ipset)
+    complement_set = IPSet(complement)
+    for cidr in complement:
+        assert IPNetwork(cidr) not in NON_ROUTABLE_SET
+    assert (complement_set & NON_ROUTABLE_SET) == IPSet()
+
+
+def test_routable_universe_has_no_private_ranges():
+    for cidr in NON_ROUTABLE_SET.iter_cidrs():
+        assert cidr not in ROUTABLE_UNIVERSE

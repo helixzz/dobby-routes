@@ -11,6 +11,32 @@ OPERATOR_INFO = {
     "cernet": "AS4538 CERNET",
 }
 
+# IANA Special-Purpose Address Registry + Multicast + Reserved
+# https://www.iana.org/assignments/iana-ipv4-special-registry
+NON_ROUTABLE_RANGES = [
+    "0.0.0.0/8",  # RFC 791  - "This" network
+    "10.0.0.0/8",  # RFC 1918 - Private use
+    "100.64.0.0/10",  # RFC 6598 - CGNAT shared address space
+    "127.0.0.0/8",  # RFC 1122 - Loopback
+    "169.254.0.0/16",  # RFC 3927 - Link-local
+    "172.16.0.0/12",  # RFC 1918 - Private use
+    "192.0.0.0/24",  # RFC 6890 - IETF protocol assignments
+    "192.0.2.0/24",  # RFC 5737 - TEST-NET-1 (documentation)
+    "192.31.196.0/24",  # RFC 7535 - AS112-v4
+    "192.52.193.0/24",  # RFC 7450 - AMT
+    "192.88.99.0/24",  # RFC 7526 - Deprecated 6to4 relay anycast
+    "192.168.0.0/16",  # RFC 1918 - Private use
+    "192.175.48.0/24",  # RFC 7534 - Direct Delegation AS112 Service
+    "198.18.0.0/15",  # RFC 2544 - Benchmarking
+    "198.51.100.0/24",  # RFC 5737 - TEST-NET-2 (documentation)
+    "203.0.113.0/24",  # RFC 5737 - TEST-NET-3 (documentation)
+    "224.0.0.0/4",  # RFC 5771 - Multicast
+    "240.0.0.0/4",  # RFC 1112 - Reserved for future use
+]
+
+NON_ROUTABLE_SET = IPSet(NON_ROUTABLE_RANGES)
+ROUTABLE_UNIVERSE = IPSet([IPNetwork("0.0.0.0/0")]) - NON_ROUTABLE_SET
+
 
 def merge_routes(cidr_lists: list[list[str]]) -> IPSet:
     result = IPSet()
@@ -23,12 +49,20 @@ def merge_routes(cidr_lists: list[list[str]]) -> IPSet:
     return result
 
 
+def filter_non_routable(ipset: IPSet) -> IPSet:
+    removed = ipset & NON_ROUTABLE_SET
+    if removed:
+        count = sum(1 for _ in removed.iter_cidrs())
+        logger.info("Filtered %d non-routable CIDR(s) from routes", count)
+    return ipset - NON_ROUTABLE_SET
+
+
 def optimize_routes(ipset: IPSet) -> list[str]:
     return sorted(str(net) for net in ipset.iter_cidrs())
 
 
 def compute_complement(ipset: IPSet) -> list[str]:
-    complement = IPSet([IPNetwork("0.0.0.0/0")]) - ipset
+    complement = ROUTABLE_UNIVERSE - ipset
     return sorted(str(net) for net in complement.iter_cidrs())
 
 

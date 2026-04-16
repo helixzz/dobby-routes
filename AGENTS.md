@@ -51,7 +51,8 @@ fetcher (HTTP GET)
 1. **netaddr over ipaddress** — `IPSet` provides set operations (difference for complement), O(n log n) merge, O(1) membership testing
 2. **APNIC count → CIDR** — uses `ipaddress.summarize_address_range()` to correctly handle non-power-of-2 address counts
 3. **Annotation strategy** — operator-specific CIDRs matched by IPSet membership; unmatched routes labeled "CN"
-4. **Complement** — `IPSet(['0.0.0.0/0']) - forward_routes`
+4. **Non-routable filtering** — all IANA special-purpose, multicast, and reserved IPv4 ranges (RFC 1918, RFC 6598, RFC 5771, etc.) are excluded from both forward and inverse route tables. Complement is computed against a routable-only universe.
+5. **Complement** — `ROUTABLE_UNIVERSE - forward_routes` (excludes private/reserved ranges)
 
 ## Output Files
 
@@ -64,12 +65,12 @@ fetcher (HTTP GET)
 ## Testing
 
 ```bash
-pytest                # 88 tests, all offline (HTTP mocked)
+pytest                # 97 tests, all offline (HTTP mocked)
 pytest -v             # verbose output
 pytest tests/test_parser.py   # run specific module tests
 ```
 
-Tests cover: CLI integration (argument parsing, skip modes, error paths, e2e pipeline), APNIC parsing (including invalid IPs, count bounds, overflow), CIDR merging, complement computation, output formatting (shared timestamps), fetcher retry logic and concurrent fetching, URL validation.
+Tests cover: CLI integration (argument parsing, skip modes, error paths, e2e pipeline), APNIC parsing (including invalid IPs, count bounds, overflow), CIDR merging, complement computation, non-routable filtering (RFC 1918, CGNAT, multicast, reserved), output formatting (shared timestamps), fetcher retry logic and concurrent fetching, URL validation.
 
 ## Future Extension Points
 
