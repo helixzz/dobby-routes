@@ -58,12 +58,12 @@ def filter_non_routable(ipset: IPSet) -> IPSet:
 
 
 def optimize_routes(ipset: IPSet) -> list[str]:
-    return sorted(str(net) for net in ipset.iter_cidrs())
+    return [str(net) for net in sorted(ipset.iter_cidrs())]
 
 
 def compute_complement(ipset: IPSet) -> list[str]:
     complement = ROUTABLE_UNIVERSE - ipset
-    return sorted(str(net) for net in complement.iter_cidrs())
+    return [str(net) for net in sorted(complement.iter_cidrs())]
 
 
 def annotate_routes(

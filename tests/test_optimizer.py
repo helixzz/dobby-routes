@@ -48,12 +48,12 @@ def test_merge_routes_empty():
     assert result == IPSet()
 
 
-def test_optimize_routes_returns_sorted_strings():
-    ipset = IPSet(["192.168.0.0/24", "10.0.0.0/8"])
+def test_optimize_routes_returns_numerically_sorted():
+    ipset = IPSet(["10.0.0.0/8", "2.0.0.0/8", "192.168.0.0/24"])
     result = optimize_routes(ipset)
     assert isinstance(result, list)
     assert all(isinstance(s, str) for s in result)
-    assert result == sorted(result)
+    assert result == ["2.0.0.0/8", "10.0.0.0/8", "192.168.0.0/24"]
 
 
 def test_optimize_routes_merges():
@@ -85,10 +85,11 @@ def test_compute_complement_plus_original_equals_routable():
     assert combined == ROUTABLE_UNIVERSE
 
 
-def test_compute_complement_returns_sorted():
-    ipset = IPSet(["10.0.0.0/8"])
+def test_compute_complement_returns_numerically_sorted():
+    ipset = IPSet(["1.0.0.0/8"])
     result = compute_complement(ipset)
-    assert result == sorted(result)
+    networks = [IPNetwork(c) for c in result]
+    assert networks == sorted(networks)
 
 
 def test_annotate_routes_operator_annotation():
