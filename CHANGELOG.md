@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `cli.py` pipeline applies `filter_non_routable()` after merge, before optimize/annotate/complement
 - Forward routes are defensively filtered to catch upstream data errors from APNIC or GitHub sources
 
+### Fixed
+- Route output files now sorted numerically by IP address instead of lexicographically (e.g. `2.x` before `10.x`)
+- Nightly release workflow now correctly deletes the date-specific tag before re-creating, fixing same-day manual re-trigger failures
+
 ## [0.1.1] - 2026-04-15
 
 ### Added
