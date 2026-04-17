@@ -7,6 +7,7 @@
 **Tech Stack**: Python 3.9+, netaddr, requests
 **Entry Point**: `src/dobby_routes/cli.py` → `main()`
 **Package**: installed via `pip install -e .`, exposes `dobby-routes` CLI command
+**Version**: maintained in `pyproject.toml` `[project].version`
 
 ## Architecture
 
@@ -79,17 +80,57 @@ Tests cover: CLI integration (argument parsing, skip modes, error paths, e2e pip
 - **Output formats**: `output.py` can be extended with new writers (JSON, BIRD config, RouterOS script, etc.).
 - **Caching**: `fetcher.py` could cache downloads to avoid re-fetching during development.
 
-## Conventions
+## Development Rules
 
-- **Logging**: `logging.getLogger(__name__)` per module, output to stderr
-- **Error handling**: Invalid CIDRs/lines are warned and skipped, never crash the pipeline; specific exception types only (no bare `except Exception`)
-- **Type hints**: All public functions have type annotations
-- **No docstrings**: Code is self-documenting; comments only where algorithm is non-obvious
-- **Linting**: `ruff check .` and `ruff format .` enforced in CI; config in `pyproject.toml`
-- **Network resilience**: `fetcher.fetch_url()` retries 3 times with exponential backoff; operator fetches run concurrently via `ThreadPoolExecutor`
-- **Output consistency**: All three output files share a single UTC timestamp generated in `cli.py`
+### Mandatory on Every Change
 
-## CI/CD
+1. **Run `pytest`** — all tests must pass before committing
+2. **Run `ruff check .` and `ruff format --check .`** — lint and format must be clean
+3. **Update `CHANGELOG.md`** — every user-facing or behavioral change gets an entry under the current version's `Added`, `Changed`, or `Fixed` section
+4. **Bump version in `pyproject.toml`** — when releasing a new version, bump `[project].version` and add a new section in `CHANGELOG.md`; keep both in sync
+5. **Commit with conventional prefix** — `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `style:`, `ci:`, `chore:`, `data:`
+
+### Code Quality Rules
+
+- **No bare `except Exception`** — catch specific types only (e.g., `(ValueError, TypeError, AddrFormatError)`)
+- **No type suppressions** — never use `# type: ignore`, `cast(Any, ...)`, or equivalent unless absolutely unavoidable
+- **No docstrings** — code is self-documenting; comments only where the algorithm is non-obvious or for RFC/standard references
+- **Type hints** — all public functions must have type annotations
+- **Line length** — 100 characters max (enforced by ruff)
+- **Import order** — enforced by ruff isort rules (`I001`)
+
+### IP Routing Correctness (CRITICAL)
+
+- **All route tables are Internet-only** — no private, reserved, multicast, or special-purpose IPv4 ranges may appear in any output file
+- **Non-routable ranges** are defined in `optimizer.NON_ROUTABLE_RANGES` with RFC references; update this list if IANA publishes new special-purpose allocations
+- **Forward routes are defensively filtered** — even though APNIC shouldn't allocate private space, `filter_non_routable()` is applied after merge to catch upstream data errors
+- **Complement uses `ROUTABLE_UNIVERSE`** not `0.0.0.0/0` — this ensures the inverse table never includes private ranges
+- **IP sorting must be numeric** — sort by `IPNetwork` objects, never by string (lexicographic sort puts `10.x` before `2.x`)
+
+### Error Handling
+
+- Invalid CIDRs/lines are warned via `logger.warning()` and skipped — never crash the pipeline
+- `fetcher.fetch_url()` retries 3 times with exponential backoff (1s, 2s, 4s)
+- `cli.py main()` catches `(requests.RequestException, ValueError, OSError)` — not bare `Exception`
+- Parser validates IP format, count bounds, and IPv4 overflow before producing CIDRs
+
+### Output Consistency
+
+- All three output files share a single UTC timestamp generated once in `cli.py` and passed to writers
+- Output writers do NOT create directories — `cli.py` handles `os.makedirs()` once
+- Route counts in file headers must match the actual number of data lines
+
+### CI/CD Caveats
 
 - **Test & Lint** (`.github/workflows/test.yml`): Runs on push/PR to main. Python 3.9–3.12 matrix for tests; ruff lint and format checks.
 - **Update Route Tables** (`.github/workflows/update-routes.yml`): Daily cron at 00:00 UTC. Generates route tables, commits to main, updates `data` branch, creates nightly release with attached files.
+- **Nightly release tags** use `nightly-${DATE}` format; same-day re-triggers delete the existing tag/release before re-creating
+- **`output/*.txt` files are tracked in git** — they are auto-updated by the daily cron workflow, not gitignored
+- **Node.js 20 deprecation warnings** in GitHub Actions are cosmetic; resolve by updating to `actions/checkout@v5` and `actions/setup-python@v6` when available
+
+## Conventions
+
+- **Logging**: `logging.getLogger(__name__)` per module, output to stderr
+- **Linting**: `ruff check .` and `ruff format .` enforced in CI; config in `pyproject.toml`
+- **Network resilience**: `fetcher.fetch_url()` retries 3 times with exponential backoff; operator fetches run concurrently via `ThreadPoolExecutor`
+- **User-Agent**: dynamically derived from package metadata via `importlib.metadata.version()` with fallback to `"dobby-routes/dev"`

@@ -13,7 +13,7 @@ This installs the package in editable mode with all dev dependencies (pytest, py
 ## Running Tests
 
 ```bash
-pytest             # run all 88 tests
+pytest             # run all 97 tests
 pytest -v          # verbose output
 pytest tests/test_parser.py  # run a specific module
 ```
@@ -86,7 +86,7 @@ data: update route tables 2025-04-15
 
 1. Create a feature branch from `main`
 2. Make your changes
-3. Ensure `pytest` passes (88+ tests)
+3. Ensure `pytest` passes (97+ tests)
 4. Ensure `ruff check .` and `ruff format --check .` pass
 5. Push and open a PR against `main`
 6. CI will run tests on Python 3.9–3.12 and lint checks automatically
