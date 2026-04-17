@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dobby-routes"
-version = "0.1.0"
+version = "0.2.0"
 description = "China mainland IP route table generator"
 license = {text = "MIT"}
 requires-python = ">=3.9"
