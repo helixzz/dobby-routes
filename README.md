@@ -2,6 +2,8 @@
 
 Generate optimized China mainland IP route tables from authoritative sources (APNIC, GitHub).
 
+Dobby is free!
+
 ## Installation
 
 ```bash
