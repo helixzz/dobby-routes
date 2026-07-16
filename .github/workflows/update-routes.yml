@@ -27,7 +27,11 @@ jobs:
         run: pip install -e .
 
       - name: Generate route tables
-        run: dobby-routes --output-dir ./output
+        run: |
+          dobby-routes \
+            --output-dir "$GITHUB_WORKSPACE/output" \
+            --allowlist-dir "$GITHUB_WORKSPACE/allowlists" \
+            --denylist-dir "$GITHUB_WORKSPACE/denylists"
 
       - name: Commit to main branch
         id: commit-main
