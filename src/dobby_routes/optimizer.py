@@ -73,7 +73,7 @@ def annotate_routes(
     labeled: list[tuple[IPNetwork, str]] = []
     for op, cidrs in operator_cidrs.items():
         label = OPERATOR_INFO.get(op, op)
-        op_set = IPSet(cidrs)
+        op_set = IPSet(cidrs) & all_merged
         operator_combined |= op_set
         for net in op_set.iter_cidrs():
             labeled.append((net, label))

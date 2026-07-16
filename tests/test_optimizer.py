@@ -133,6 +133,17 @@ def test_annotate_routes_empty():
     assert result == []
 
 
+def test_annotate_routes_intersects_operator_routes_with_final_set():
+    operator_cidrs = {"chinanet": ["8.8.8.0/24"]}
+    final_routes = IPSet(["8.8.8.128/25", "9.9.9.0/24"])
+
+    result = annotate_routes(operator_cidrs, final_routes)
+
+    assert ("8.8.8.128/25", "AS4134/AS4812 China Telecom") in result
+    assert ("9.9.9.0/24", "CN") in result
+    assert IPSet([cidr for cidr, _ in result]) == final_routes
+
+
 def test_filter_non_routable_removes_rfc1918():
     ipset = IPSet(["1.0.0.0/24", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"])
     result = filter_non_routable(ipset)
