@@ -5,17 +5,29 @@ import sys
 from datetime import datetime, timezone
 
 import requests
+from netaddr import IPSet
 
-from dobby_routes.fetcher import fetch_all_operators, fetch_apnic, fetch_chnroutes2
-from dobby_routes.optimizer import (
+from .fetcher import (
+    REVIEWED_CIDR_SOURCE_SCOPES,
+    fetch_all_operators,
+    fetch_apnic,
+    fetch_chnroutes2,
+    fetch_cidr_source,
+)
+from .optimizer import (
     annotate_routes,
     compute_complement,
     filter_non_routable,
     merge_routes,
     optimize_routes,
 )
-from dobby_routes.output import write_annotated, write_complement, write_optimized
-from dobby_routes.parser import apnic_entry_to_cidrs, parse_apnic_delegated, parse_cidr_list
+from .output import write_annotated, write_complement, write_optimized
+from .parser import (
+    apnic_entry_to_cidrs,
+    load_cidr_directory,
+    parse_apnic_delegated,
+    parse_cidr_list,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +41,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--output-dir",
         default="./output",
         help="output directory (default: ./output)",
+    )
+    parser.add_argument(
+        "--allowlist-dir",
+        default="./allowlists",
+        help="directory of local IPv4 routes to include (default: ./allowlists)",
+    )
+    parser.add_argument(
+        "--denylist-dir",
+        default="./denylists",
+        help="directory of local IPv4 routes to exclude (default: ./denylists)",
     )
     parser.add_argument(
         "--skip-github",
@@ -72,6 +94,10 @@ def _run(args: argparse.Namespace) -> None:
     apnic_cidrs: list[str] = []
     operator_cidrs: dict[str, list[str]] = {}
     extra_cidrs: list[str] = []
+    allowlist_cidrs = _load_cidr_sources(args.allowlist_dir)
+    denylist_cidrs = _load_cidr_sources(args.denylist_dir)
+    logger.info("Allowlists: %d CIDRs", len(allowlist_cidrs))
+    logger.info("Denylists: %d CIDRs", len(denylist_cidrs))
 
     if not args.skip_apnic:
         logger.info("Fetching APNIC delegated data...")
@@ -94,25 +120,32 @@ def _run(args: argparse.Namespace) -> None:
         extra_cidrs = parse_cidr_list(raw_chnroutes2)
         logger.info("  chnroutes2: %d CIDRs", len(extra_cidrs))
 
-    all_cidr_lists = [apnic_cidrs, extra_cidrs]
+    all_cidr_lists = [apnic_cidrs, extra_cidrs, allowlist_cidrs]
     for cidrs in operator_cidrs.values():
         all_cidr_lists.append(cidrs)
 
     if not any(all_cidr_lists):
-        logger.error("No data fetched. Use at least one data source.")
+        logger.error("No positive routes loaded. Use a remote source or an allowlist.")
         sys.exit(1)
 
     logger.info("Merging and optimizing routes...")
-    merged = merge_routes(all_cidr_lists)
-    merged = filter_non_routable(merged)
-    optimized = optimize_routes(merged)
+    positive_routes = merge_routes(all_cidr_lists)
+    deny_routes = merge_routes([denylist_cidrs])
+    final_routes = filter_non_routable(positive_routes - deny_routes)
+    logger.info(
+        "Positive: %d routes, denied: %d routes, final: %d routes",
+        sum(1 for _ in positive_routes.iter_cidrs()),
+        sum(1 for _ in deny_routes.iter_cidrs()),
+        sum(1 for _ in final_routes.iter_cidrs()),
+    )
+    optimized = optimize_routes(final_routes)
     logger.info("Optimized: %d routes", len(optimized))
 
     logger.info("Generating annotated routes...")
-    annotated = annotate_routes(operator_cidrs, merged)
+    annotated = annotate_routes(operator_cidrs, final_routes)
 
     logger.info("Computing complement routes...")
-    complement = compute_complement(merged)
+    complement = compute_complement(final_routes)
     logger.info("Complement: %d routes", len(complement))
 
     output_dir = args.output_dir
@@ -131,6 +164,20 @@ def _run(args: argparse.Namespace) -> None:
     logger.info("  %s (%d routes)", annotated_path, len(annotated))
     logger.info("  %s (%d routes)", optimized_path, len(optimized))
     logger.info("  %s (%d routes)", complement_path, len(complement))
+
+
+def _load_cidr_sources(directory: str) -> list[str]:
+    sources = load_cidr_directory(directory)
+    cidrs = list(sources.cidrs)
+    for url in sources.urls:
+        included_cidrs = parse_cidr_list(fetch_cidr_source(url), source=url)
+        if not included_cidrs:
+            raise ValueError(f"CIDR source contains no usable IPv4 CIDRs: {url}")
+        reviewed_scope = REVIEWED_CIDR_SOURCE_SCOPES.get(url)
+        if reviewed_scope is not None and IPSet(included_cidrs) - IPSet(reviewed_scope):
+            raise ValueError(f"CIDR source contains routes outside reviewed scope: {url}")
+        cidrs.extend(included_cidrs)
+    return cidrs
 
 
 if __name__ == "__main__":
