@@ -1,8 +1,15 @@
+import logging
+
+import pytest
+
 from dobby_routes.parser import (
     ApnicEntry,
+    CidrSources,
     apnic_entry_to_cidrs,
+    load_cidr_directory,
     parse_apnic_delegated,
     parse_cidr_list,
+    parse_local_cidr_list,
 )
 
 SAMPLE_APNIC = """\
@@ -156,3 +163,86 @@ def test_apnic_entry_to_cidrs_overflow_clamps():
     for cidr in cidrs:
         net = ipaddress.IPv4Network(cidr)
         assert int(net.broadcast_address) <= int(ipaddress.IPv4Address("255.255.255.255"))
+
+
+def test_load_cidr_directory_aggregates_files_in_filename_order(tmp_path):
+    directory = tmp_path / "lists"
+    directory.mkdir()
+    (directory / "z-last.txt").write_text(
+        "1.1.1.1\n@include https://example.com/second.txt\n",
+        encoding="utf-8",
+    )
+    (directory / "a-first.txt").write_text(
+        "8.8.8.0/24\n@include https://example.com/first.txt\n"
+        "@include https://example.com/second.txt\n",
+        encoding="utf-8",
+    )
+    nested_directory = directory / "nested"
+    nested_directory.mkdir()
+    (nested_directory / "ignored.txt").write_text("9.9.9.0/24\n", encoding="utf-8")
+
+    assert load_cidr_directory(str(directory)) == CidrSources(
+        cidrs=["8.8.8.0/24", "1.1.1.1/32"],
+        urls=["https://example.com/first.txt", "https://example.com/second.txt"],
+    )
+
+
+def test_load_cidr_directory_missing_is_tolerated(tmp_path, caplog):
+    directory = tmp_path / "missing"
+    caplog.set_level(logging.INFO)
+
+    assert load_cidr_directory(str(directory)) == CidrSources(cidrs=[], urls=[])
+    assert str(directory) in caplog.text
+
+
+def test_load_cidr_directory_rejects_non_directory_path(tmp_path):
+    path = tmp_path / "routes.txt"
+    path.write_text("8.8.8.0/24\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="not a directory"):
+        load_cidr_directory(str(path))
+
+
+def test_load_cidr_directory_invalid_line_names_source_file(tmp_path, caplog):
+    directory = tmp_path / "lists"
+    directory.mkdir()
+    source_file = directory / "local-routes.txt"
+    source_file.write_text("not-a-cidr\n8.8.8.0/24\n", encoding="utf-8")
+    caplog.set_level(logging.WARNING)
+
+    assert load_cidr_directory(str(directory)) == CidrSources(cidrs=["8.8.8.0/24"], urls=[])
+    assert source_file.name in caplog.text
+
+
+def test_parse_local_cidr_list_extracts_static_cidrs_and_include_urls():
+    result = parse_local_cidr_list(
+        "8.8.8.8\n@include https://example.com/routes.txt\n",
+        source="local.txt",
+    )
+
+    assert result == CidrSources(
+        cidrs=["8.8.8.8/32"],
+        urls=["https://example.com/routes.txt"],
+    )
+
+
+@pytest.mark.parametrize("directive", ["@unknown value", "@include", "@include https://a b"])
+def test_parse_local_cidr_list_rejects_invalid_directives_with_source(directive):
+    with pytest.raises(ValueError, match="local.txt"):
+        parse_local_cidr_list(directive, source="local.txt")
+
+
+def test_parse_cidr_list_treats_include_as_invalid_content(caplog):
+    caplog.set_level(logging.WARNING)
+
+    assert parse_cidr_list("@include https://example.com/routes.txt\n", source="remote") == []
+    assert "Skipping invalid CIDR line in remote" in caplog.text
+
+
+def test_parse_cidr_list_skips_ipv6_with_source_warning(caplog):
+    caplog.set_level(logging.WARNING)
+
+    result = parse_cidr_list("8.8.8.0/24\n2001:4860::/32\n", source="mixed.txt")
+
+    assert result == ["8.8.8.0/24"]
+    assert "Skipping IPv6 CIDR in mixed.txt" in caplog.text
