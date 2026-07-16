@@ -12,11 +12,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `filter_non_routable()` function removes private/reserved ranges from merged routes
 - `ROUTABLE_UNIVERSE` constant: `0.0.0.0/0` minus all non-routable ranges
 - 9 new tests for non-routable filtering (RFC 1918, CGNAT, loopback, link-local, multicast, reserved, documentation nets, complement exclusion, routable universe integrity)
+- Repository-local `allowlists/` and `denylists/` directories with `--allowlist-dir` and `--denylist-dir` overrides for IPv4 route additions and exclusions
+- Strict HTTPS `@include <URL>` directives for local route files, with non-recursive parsing, redirect rejection, response size limits, and IPv6 skipping
+- Telegram's official CIDR source in `denylists/telegram.txt` for automatic IPv4 deny routing
+- A reviewed Telegram IPv4 scope that fails closed when the upstream source returns an unapproved route
 
 ### Changed
 - `compute_complement()` now subtracts from `ROUTABLE_UNIVERSE` instead of `0.0.0.0/0`, ensuring inverse route tables never contain private/reserved ranges
 - `cli.py` pipeline applies `filter_non_routable()` after merge, before optimize/annotate/complement
 - Forward routes are defensively filtered to catch upstream data errors from APNIC or GitHub sources
+- Local allowlists are merged with remote routes before denylists are subtracted; final routes now drive optimized, annotated, and inverse outputs
+- Operator annotations are intersected with final routes, preventing denied or non-routable operator CIDRs from appearing in annotated output
+- Scheduled route generation passes explicit workspace paths for output, allowlists, and denylists
 
 ### Fixed
 - Route output files now sorted numerically by IP address instead of lexicographically (e.g. `2.x` before `10.x`)
