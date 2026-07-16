@@ -9,11 +9,14 @@ from dobby_routes.fetcher import (
     CHNROUTES2_URL,
     GITHUB_CHINA_URL,
     GITHUB_OPERATOR_URLS,
+    MAX_CIDR_SOURCE_BYTES,
     fetch_all_operators,
     fetch_apnic,
     fetch_chnroutes2,
+    fetch_cidr_source,
     fetch_operator,
     fetch_url,
+    validate_cidr_source_url,
 )
 
 
@@ -202,3 +205,97 @@ def test_fetch_url_retries_on_http_error(mock_sleep):
         result = fetch_url("https://example.com/", retries=2)
 
     assert result == "recovered"
+
+
+def test_validate_cidr_source_url_accepts_telegram_url():
+    url = "https://core.telegram.org/resources/cidr.txt"
+
+    assert validate_cidr_source_url(url) == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com/routes.txt",
+        "file:///tmp/routes.txt",
+        "https:///routes.txt",
+        "https://user@example.com/routes.txt",
+        "https://example.com/routes.txt#fragment",
+        "https://example.com/routes file.txt",
+        "https://example.com:8443/routes.txt",
+        "https://localhost/routes.txt",
+        "https://localhost./routes.txt",
+        "https://sub.localhost/routes.txt",
+        "https://sub.localhost./routes.txt",
+        "https://127.0.0.1/routes.txt",
+        "https://127.0.0.1./routes.txt",
+        "https://10.0.0.1/routes.txt",
+    ],
+)
+def test_validate_cidr_source_url_rejects_unsafe_urls(url):
+    with pytest.raises(ValueError, match="Invalid CIDR source URL"):
+        validate_cidr_source_url(url)
+
+
+def test_fetch_cidr_source_disables_redirects_and_returns_body():
+    url = "https://example.com/routes.txt"
+    response = MagicMock()
+    response.status_code = 200
+    response.encoding = "utf-8"
+    response.iter_content.return_value = [b"8.8.8.0/24\n"]
+    response.raise_for_status = MagicMock()
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=response) as mock_get:
+        result = fetch_cidr_source(url)
+
+    assert result == "8.8.8.0/24\n"
+    response.close.assert_called_once_with()
+    mock_get.assert_called_once_with(
+        url,
+        timeout=30,
+        headers={"User-Agent": _USER_AGENT},
+        allow_redirects=False,
+        stream=True,
+    )
+
+
+def test_fetch_cidr_source_rejects_redirect_response():
+    response = MagicMock()
+    response.status_code = 302
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=response):
+        with pytest.raises(ValueError, match="Redirect response rejected"):
+            fetch_cidr_source("https://example.com/routes.txt")
+
+    response.close.assert_called_once_with()
+
+
+def test_fetch_url_closes_streamed_response_before_body_on_http_error():
+    response = MagicMock()
+    response.status_code = 500
+    response.raise_for_status.side_effect = requests.HTTPError("server error")
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=response):
+        with pytest.raises(requests.HTTPError, match="server error"):
+            fetch_url("https://example.com/routes.txt", retries=1, max_content_bytes=1024)
+
+    response.iter_content.assert_not_called()
+    response.close.assert_called_once_with()
+
+
+def test_fetch_cidr_source_rejects_oversized_response():
+    response = MagicMock()
+    response.status_code = 200
+    response.iter_content.return_value = [b"x" * (MAX_CIDR_SOURCE_BYTES + 1)]
+    response.raise_for_status = MagicMock()
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=response):
+        with pytest.raises(ValueError, match="exceeds 5 MiB"):
+            fetch_cidr_source("https://example.com/routes.txt")
+
+    response.close.assert_called_once_with()
+
+
+def test_fetch_url_rejects_non_positive_retries():
+    with pytest.raises(ValueError, match="retries must be greater than zero"):
+        fetch_url("https://example.com/", retries=0)
