@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Local allowlists are merged with remote routes before denylists are subtracted; final routes now drive optimized, annotated, and inverse outputs
 - Operator annotations are intersected with final routes, preventing denied or non-routable operator CIDRs from appearing in annotated output
 - Scheduled route generation passes explicit workspace paths for output, allowlists, and denylists
+- `fetch_chnroutes2()` now uses SukkaW's optimized chnroutes2 endpoint first and falls back to Misaka's original source only if the primary fetch fails
 
 ### Fixed
 - Route output files now sorted numerically by IP address instead of lexicographically (e.g. `2.x` before `10.x`)

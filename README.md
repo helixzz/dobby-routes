@@ -139,7 +139,7 @@ Fully optimized.
 | China Unicom | `gaoyifan/china-operator-ip` (unicom.txt) | Daily |
 | China Mobile | `gaoyifan/china-operator-ip` (cmcc.txt) | Daily |
 | CERNET | `gaoyifan/china-operator-ip` (cernet.txt) | Daily |
-| chnroutes2 | `misakaio/chnroutes2` | Hourly |
+| chnroutes2 | `chnroutes2.cdn.skk.moe` optimized list; fallback to `misakaio/chnroutes2` | 2 hours / hourly fallback |
 
 ## Pre-built Route Tables
 

@@ -45,7 +45,7 @@ fetcher (HTTP GET)
   - `value` is address COUNT (not prefix length). Convert via `summarize_address_range()`.
   - Non-power-of-2 counts produce multiple CIDRs.
 - **GitHub (gaoyifan/china-operator-ip)**: `ip-lists` branch — one CIDR per line, per-operator files
-- **GitHub (misakaio/chnroutes2)**: aggregated China CIDRs from BGP feeds
+- **chnroutes2**: SukkaW optimized chnroutes2 CIDRs (`chnroutes2.cdn.skk.moe`) as primary; falls back to `misakaio/chnroutes2` if the optimized source cannot be fetched
 
 ## Key Technical Decisions
 
