@@ -29,7 +29,10 @@ GITHUB_OPERATOR_URLS = {
     "cernet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cernet.txt",
 }
 GITHUB_CHINA_URL = "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/china.txt"
-CHNROUTES2_URL = "https://raw.githubusercontent.com/misakaio/chnroutes2/master/chnroutes.txt"
+CHNROUTES2_URL = "https://chnroutes2.cdn.skk.moe/chnroutes.txt"
+CHNROUTES2_FALLBACK_URL = (
+    "https://raw.githubusercontent.com/misakaio/chnroutes2/master/chnroutes.txt"
+)
 TELEGRAM_CIDR_SOURCE_URL = "https://core.telegram.org/resources/cidr.txt"
 REVIEWED_CIDR_SOURCE_SCOPES = {
     TELEGRAM_CIDR_SOURCE_URL: (
@@ -193,4 +196,12 @@ def fetch_all_operators() -> dict[str, str]:
 
 
 def fetch_chnroutes2() -> str:
-    return fetch_url(CHNROUTES2_URL)
+    try:
+        return fetch_url(CHNROUTES2_URL)
+    except requests.RequestException as e:
+        logger.warning(
+            "Primary chnroutes2 source failed, falling back to %s: %s",
+            CHNROUTES2_FALLBACK_URL,
+            e,
+        )
+        return fetch_url(CHNROUTES2_FALLBACK_URL)

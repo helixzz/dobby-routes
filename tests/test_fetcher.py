@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import requests
@@ -6,6 +6,7 @@ import requests
 from dobby_routes.fetcher import (
     _USER_AGENT,
     APNIC_URL,
+    CHNROUTES2_FALLBACK_URL,
     CHNROUTES2_URL,
     GITHUB_CHINA_URL,
     GITHUB_OPERATOR_URLS,
@@ -44,7 +45,9 @@ def test_github_china_url_format():
 
 def test_chnroutes2_url_format():
     assert CHNROUTES2_URL.startswith("https://")
-    assert "chnroutes" in CHNROUTES2_URL
+    assert "chnroutes2.cdn.skk.moe" in CHNROUTES2_URL
+    assert CHNROUTES2_FALLBACK_URL.startswith("https://")
+    assert "misakaio/chnroutes2" in CHNROUTES2_FALLBACK_URL
 
 
 def test_fetch_url_returns_text():
@@ -139,17 +142,37 @@ def test_fetch_all_operators_values_are_strings():
     assert all(isinstance(v, str) for v in result.values())
 
 
-def test_fetch_chnroutes2_uses_chnroutes2_url():
-    mock_response = MagicMock()
-    mock_response.text = "chnroutes data"
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("dobby_routes.fetcher.requests.get", return_value=mock_response) as mock_get:
+def test_fetch_chnroutes2_uses_primary_source():
+    with patch("dobby_routes.fetcher.fetch_url", return_value="optimized data") as mock_fetch:
         result = fetch_chnroutes2()
 
-    assert result == "chnroutes data"
-    args, _ = mock_get.call_args
-    assert args[0] == CHNROUTES2_URL
+    assert result == "optimized data"
+    mock_fetch.assert_called_once_with(CHNROUTES2_URL)
+
+
+def test_fetch_chnroutes2_falls_back_when_primary_fails():
+    with patch(
+        "dobby_routes.fetcher.fetch_url",
+        side_effect=[requests.ConnectionError("primary failed"), "fallback data"],
+    ) as mock_fetch:
+        result = fetch_chnroutes2()
+
+    assert result == "fallback data"
+    assert mock_fetch.call_args_list == [call(CHNROUTES2_URL), call(CHNROUTES2_FALLBACK_URL)]
+
+
+def test_fetch_chnroutes2_propagates_fallback_failure():
+    with patch(
+        "dobby_routes.fetcher.fetch_url",
+        side_effect=[
+            requests.ConnectionError("primary failed"),
+            requests.HTTPError("fallback failed"),
+        ],
+    ) as mock_fetch:
+        with pytest.raises(requests.HTTPError, match="fallback failed"):
+            fetch_chnroutes2()
+
+    assert mock_fetch.call_args_list == [call(CHNROUTES2_URL), call(CHNROUTES2_FALLBACK_URL)]
 
 
 @patch("dobby_routes.fetcher.time.sleep")
