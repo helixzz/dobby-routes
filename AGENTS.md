@@ -126,7 +126,7 @@ Tests cover: CLI integration (argument parsing, skip modes, IPv6 dual-stack pipe
 
 ### CI/CD Caveats
 
-- **Test & Lint** (`.github/workflows/test.yml`): Runs on push/PR to main. Python 3.9–3.13 matrix for tests; ruff lint and format checks. Uses `actions/checkout@v7` and `actions/setup-python@v7` (Node.js 24 native).
+- **Test & Lint** (`.github/workflows/test.yml`): Runs on push/PR to main. Python 3.10–3.13 matrix for tests (Ubuntu 26.04 runner no longer ships EOL Python 3.9); ruff lint and format checks. Uses `actions/checkout@v7` and `actions/setup-python@v7` (Node.js 24 native).
 - **Update Route Tables** (`.github/workflows/update-routes.yml`): Daily cron at `17 1 * * *` UTC. Generates IPv4 + IPv6 route tables with `--ipv6` and minimum route guardrails, ignores timestamp-only diffs, commits to `main`, updates `data` branch, creates nightly release with diff summary, and prunes nightly releases older than 30 days.
 - **Nightly release tags** use `nightly-${DATE}` format; same-day re-triggers delete the existing tag/release before re-creating
 - **`output/*.txt` files are tracked in git** — they are auto-updated by the daily cron workflow, not gitignored

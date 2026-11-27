@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `parse_apnic_delegated()` now explicitly accepts only `allocated` and `assigned` statuses and supports `ip_version=6`
 - `fetch_url()` no longer retries non-transient HTTP 4xx errors (still retries 408, 429, 5xx, and transport errors); `fetch_all_operators()` returns deterministic key order
 - `output.py` writers now explicitly specify `encoding="utf-8"` and support IPv6 headers via `ip_version`
-- CI workflows upgraded to `actions/checkout@v7` and `actions/setup-python@v7` (Node.js 24 native), Python 3.13 added to test matrix, and daily schedule shifted to `17 1 * * *` UTC to avoid midnight queue congestion
+- CI workflows upgraded to `actions/checkout@v7` and `actions/setup-python@v7` (Node.js 24 native), test matrix updated to Python 3.10–3.13 (Ubuntu 26.04 drops EOL Python 3.9), and daily schedule shifted to `17 1 * * *` UTC to avoid midnight queue congestion
 
 ### Fixed
 - Fixed nightly Release Notes displaying `cn_routes.txt` count instead of the actual `cn_routes_annotated.txt` count
