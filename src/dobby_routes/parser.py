@@ -153,7 +153,11 @@ def parse_local_cidr_list(
     return CidrSources(cidrs=cidrs, urls=urls)
 
 
-def load_cidr_directory(directory: str, ip_version: int = 4) -> CidrSources:
+def load_cidr_directory(
+    directory: str,
+    ip_version: int = 4,
+    exclude_filenames: Optional[set[str]] = None,
+) -> CidrSources:
     _validate_ip_version(ip_version)
     directory_path = Path(directory)
     if not directory_path.exists():
@@ -166,6 +170,8 @@ def load_cidr_directory(directory: str, ip_version: int = 4) -> CidrSources:
     urls: list[str] = []
     seen_urls: set[str] = set()
     for path in sorted(directory_path.iterdir(), key=lambda item: item.name):
+        if exclude_filenames and path.name in exclude_filenames:
+            continue
         if path.is_file():
             sources = parse_local_cidr_list(
                 path.read_text(encoding="utf-8"),
@@ -272,6 +278,38 @@ def parse_bgp_asns(text: str) -> dict[int, str]:
         if raw_asn.startswith("AS") and raw_asn[2:].isdigit() and name:
             asns[int(raw_asn[2:])] = name
     return asns
+
+
+def parse_asn_list(text: str, source: Optional[str] = None) -> list[int]:
+    asns: list[int] = []
+    seen: set[int] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        token = line.upper()
+        if token.startswith("AS"):
+            token = token[2:]
+        if not token.isdigit():
+            logger.warning("Skipping invalid ASN line in %s: %s", _source_name(source), raw_line)
+            continue
+        asn = int(token)
+        if asn <= 0:
+            logger.warning("Skipping invalid ASN line in %s: %s", _source_name(source), raw_line)
+            continue
+        if asn not in seen:
+            seen.add(asn)
+            asns.append(asn)
+    return asns
+
+
+def load_asn_file(filepath: str) -> list[int]:
+    path = Path(filepath)
+    if not path.exists():
+        return []
+    if not path.is_file():
+        raise ValueError(f"ASN path is not a file: {filepath}")
+    return parse_asn_list(path.read_text(encoding="utf-8"), source=path.name)
 
 
 def parse_bgp_table(text: str) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:

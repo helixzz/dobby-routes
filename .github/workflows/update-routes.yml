@@ -89,6 +89,7 @@ jobs:
             --output-dir "$GITHUB_WORKSPACE/output" \
             --allowlist-dir "$GITHUB_WORKSPACE/allowlists" \
             --denylist-dir "$GITHUB_WORKSPACE/denylists" \
+            --us-special-dir "$GITHUB_WORKSPACE/us_special" \
             --ipv6 \
             --aws-cn \
             --protect-overseas \
@@ -124,6 +125,8 @@ jobs:
               "cn_routes6_annotated.txt",
               "cn_routes6_bgp.txt",
               "cn_routes6_bgp_inverse.txt",
+              "us_routes.txt",
+              "us_routes6.txt",
           ]
 
           def data_lines(text: str) -> list[str]:
@@ -226,6 +229,8 @@ jobs:
             output/cn_routes6_inverse.txt \
             output/cn_routes6_bgp.txt \
             output/cn_routes6_bgp_inverse.txt \
+            output/us_routes.txt \
+            output/us_routes6.txt \
             output/formats
           DATE=${{ steps.diff-check.outputs.date }}
           ROUTES=${{ steps.diff-check.outputs.routes }}
@@ -256,7 +261,9 @@ jobs:
             cn_routes6.txt \
             cn_routes6_inverse.txt \
             cn_routes6_bgp.txt \
-            cn_routes6_bgp_inverse.txt; do
+            cn_routes6_bgp_inverse.txt \
+            us_routes.txt \
+            us_routes6.txt; do
             cp "output/${f}" "/tmp/dobby-data-stage/${f}"
           done
           cp -r output/formats /tmp/dobby-data-stage/formats
@@ -277,7 +284,9 @@ jobs:
             cn_routes6.txt \
             cn_routes6_inverse.txt \
             cn_routes6_bgp.txt \
-            cn_routes6_bgp_inverse.txt; do
+            cn_routes6_bgp_inverse.txt \
+            us_routes.txt \
+            us_routes6.txt; do
             cp "/tmp/dobby-data-stage/${f}" .
           done
           rm -rf formats
@@ -293,6 +302,8 @@ jobs:
             cn_routes6_inverse.txt \
             cn_routes6_bgp.txt \
             cn_routes6_bgp_inverse.txt \
+            us_routes.txt \
+            us_routes6.txt \
             formats
           DATE=${{ steps.diff-check.outputs.date }}
           if ! git diff --cached --quiet; then
@@ -325,7 +336,9 @@ jobs:
             output/cn_routes6_annotated.txt \
             output/cn_routes6_inverse.txt \
             output/cn_routes6_bgp.txt \
-            output/cn_routes6_bgp_inverse.txt
+            output/cn_routes6_bgp_inverse.txt \
+            output/us_routes.txt \
+            output/us_routes6.txt
 
       - name: Prune old nightly releases (keep 30 days)
         if: steps.diff-check.outputs.changed == 'true'

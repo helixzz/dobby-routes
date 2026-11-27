@@ -839,3 +839,42 @@ def test_run_rejects_unknown_format(tmp_path):
     )
     with pytest.raises(ValueError, match="Unsupported format"):
         _run(args)
+
+
+@patch("dobby_routes.cli.fetch_bgp_asns", return_value=SAMPLE_BGP_ASNS)
+@patch(
+    "dobby_routes.cli.fetch_bgp_table",
+    return_value=SAMPLE_BGP_TABLE + "160.79.104.0/23 399358\n2607:6bc0::/48 399358\n",
+)
+@patch("dobby_routes.cli.fetch_apnic", return_value=SAMPLE_APNIC_DUAL_STACK)
+def test_run_us_special_dir_generates_us_routes(
+    mock_apnic, mock_bgp_table, mock_bgp_asns, tmp_path
+):
+    us_dir = tmp_path / "us_special"
+    us_dir.mkdir()
+    (us_dir / "asns.txt").write_text("AS399358  # Anthropic\n", encoding="utf-8")
+    (us_dir / "custom.txt").write_text("198.51.100.0/24\n203.0.114.0/24\n", encoding="utf-8")
+    out_dir = tmp_path / "out"
+    stats_path = tmp_path / "stats.json"
+
+    args = Namespace(
+        output_dir=str(out_dir),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(tmp_path / "denylists"),
+        skip_apnic=False,
+        skip_github=True,
+        ipv6=True,
+        bgp=True,
+        us_special_dir=str(us_dir),
+        stats_json=str(stats_path),
+        verbose=False,
+    )
+
+    _run(args)
+
+    us_v4 = _read_data_lines(str(out_dir / "us_routes.txt"))
+    us_v6 = _read_data_lines(str(out_dir / "us_routes6.txt"))
+    assert us_v4 == ["160.79.104.0/23", "203.0.114.0/24"]
+    assert us_v6 == ["2607:6bc0::/48"]
+    stats = json.loads(stats_path.read_text(encoding="utf-8"))
+    assert stats["us_special"] == {"ipv4": 2, "ipv6": 1}

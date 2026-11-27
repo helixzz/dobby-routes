@@ -6,8 +6,10 @@ from dobby_routes.parser import (
     ApnicEntry,
     CidrSources,
     apnic_entry_to_cidrs,
+    load_asn_file,
     load_cidr_directory,
     parse_apnic_delegated,
+    parse_asn_list,
     parse_aws_ip_ranges,
     parse_bgp_asns,
     parse_bgp_table,
@@ -367,3 +369,13 @@ def test_parse_bgp_asns_and_table():
     v4, v6 = parse_bgp_table(table_txt)
     assert v4 == [("1.0.1.0/24", 4134)]
     assert v6 == [("2400:3200::/32", 37963)]
+
+
+def test_parse_asn_list_and_load_asn_file(tmp_path):
+    raw = "# header\nAS399358  # Anthropic\n399358\nAS0\ninvalid\n2906\n"
+    assert parse_asn_list(raw, source="asns.txt") == [399358, 2906]
+
+    asn_file = tmp_path / "asns.txt"
+    asn_file.write_text(raw, encoding="utf-8")
+    assert load_asn_file(str(asn_file)) == [399358, 2906]
+    assert load_asn_file(str(tmp_path / "missing.txt")) == []

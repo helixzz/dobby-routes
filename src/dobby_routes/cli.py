@@ -44,6 +44,7 @@ from .output import (
     write_bgp_routes,
     write_bird_prefix_set,
     write_complement,
+    write_custom_routes,
     write_nftables_set,
     write_optimized,
     write_routeros_address_list,
@@ -52,6 +53,7 @@ from .output import (
 )
 from .parser import (
     apnic_entry_to_cidrs,
+    load_asn_file,
     load_cidr_directory,
     parse_apnic_delegated,
     parse_aws_ip_ranges,
@@ -121,6 +123,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--bgp",
         action="store_true",
         help="use bgp.tools global BGP table for ASN enrichment and lossless BGP-minimized tables",
+    )
+    parser.add_argument(
+        "--us-special-dir",
+        default=None,
+        help=(
+            "optional directory containing US-specific asns.txt and/or CIDR lists "
+            "to generate us_routes.txt (and us_routes6.txt with --ipv6)"
+        ),
     )
     parser.add_argument(
         "--verify-canaries",
@@ -232,6 +242,7 @@ def _run(args: argparse.Namespace) -> None:
     enable_aws_cn = bool(getattr(args, "aws_cn", False))
     protect_overseas = bool(getattr(args, "protect_overseas", False))
     enable_bgp = bool(getattr(args, "bgp", False))
+    us_special_dir: Optional[str] = getattr(args, "us_special_dir", None)
     verify_canaries = bool(getattr(args, "verify_canaries", False))
     baseline_stats_path: Optional[str] = getattr(args, "baseline_stats", None)
     max_drift_pct = float(getattr(args, "max_drift_pct", 0.0))
@@ -383,6 +394,8 @@ def _run(args: argparse.Namespace) -> None:
             min_ipv6_inverse_routes=min_ipv6_inverse_routes,
         )
 
+    bgp_v4_entries: list[tuple[str, int]] = []
+    bgp_v6_entries: list[tuple[str, int]] = []
     bgp_fwd_v4: list[str] = []
     bgp_inv_v4: list[str] = []
     bgp_fwd_v6: list[str] = []
@@ -442,6 +455,17 @@ def _run(args: argparse.Namespace) -> None:
                 len(bgp_inv_v6),
             )
 
+    us_special_v4: list[str] = []
+    us_special_v6: list[str] = []
+    if us_special_dir:
+        us_special_v4, us_special_v6 = _build_us_special_routes(
+            directory=us_special_dir,
+            enable_ipv6=enable_ipv6,
+            bgp_v4_entries=bgp_v4_entries,
+            bgp_v6_entries=bgp_v6_entries,
+            include_cache=include_cache,
+        )
+
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     stats: dict[str, object] = {
         "timestamp_utc": timestamp,
@@ -468,6 +492,11 @@ def _run(args: argparse.Namespace) -> None:
                 "forward": len(bgp_fwd_v6),
                 "inverse": len(bgp_inv_v6),
             }
+    if us_special_dir:
+        us_stats: dict[str, int] = {"ipv4": len(us_special_v4)}
+        if enable_ipv6:
+            us_stats["ipv6"] = len(us_special_v6)
+        stats["us_special"] = us_stats
 
     if verify_canaries:
         validate_canaries(
@@ -556,6 +585,25 @@ def _run(args: argparse.Namespace) -> None:
             write_bgp_routes(bgp_inv_v6_path, bgp_inv_v6, timestamp, ip_version=6, inverse=True)
             logger.info("  %s (%d routes)", bgp_fwd_v6_path, len(bgp_fwd_v6))
             logger.info("  %s (%d routes)", bgp_inv_v6_path, len(bgp_inv_v6))
+
+    if us_special_dir:
+        us_v4_path = os.path.join(output_dir, "us_routes.txt")
+        write_custom_routes(
+            us_v4_path,
+            us_special_v4,
+            "US-specialized IPv4 route table",
+            timestamp,
+        )
+        logger.info("  %s (%d routes)", us_v4_path, len(us_special_v4))
+        if enable_ipv6:
+            us_v6_path = os.path.join(output_dir, "us_routes6.txt")
+            write_custom_routes(
+                us_v6_path,
+                us_special_v6,
+                "US-specialized IPv6 route table",
+                timestamp,
+            )
+            logger.info("  %s (%d routes)", us_v6_path, len(us_special_v6))
 
     if formats:
         _write_extra_formats(
@@ -878,12 +926,74 @@ def _build_ipv6_routes(
     return final_v6, allow_v6, deny_v6, optimized_v6, annotated_v6, complement_v6
 
 
+def _build_us_special_routes(
+    directory: str,
+    enable_ipv6: bool,
+    bgp_v4_entries: list[tuple[str, int]],
+    bgp_v6_entries: list[tuple[str, int]],
+    include_cache: dict[str, str],
+) -> tuple[list[str], list[str]]:
+    asns = load_asn_file(os.path.join(directory, "asns.txt"))
+    asn_set = set(asns)
+    local_v4 = _load_cidr_sources(
+        directory,
+        ip_version=4,
+        include_cache=include_cache,
+        exclude_filenames={"asns.txt"},
+    )
+    local_v6 = (
+        _load_cidr_sources(
+            directory,
+            ip_version=6,
+            include_cache=include_cache,
+            exclude_filenames={"asns.txt"},
+        )
+        if enable_ipv6
+        else []
+    )
+
+    if asn_set and not bgp_v4_entries and not bgp_v6_entries:
+        logger.info("Fetching global BGP table for US-special ASN lookup...")
+        bgp_v4_entries, bgp_v6_entries = parse_bgp_table(fetch_bgp_table())
+
+    asn_v4 = [cidr for cidr, asn in bgp_v4_entries if asn in asn_set]
+    asn_v6 = [cidr for cidr, asn in bgp_v6_entries if asn in asn_set] if enable_ipv6 else []
+
+    final_us_v4 = filter_non_routable(merge_routes([local_v4, asn_v4]))
+    optimized_us_v4 = optimize_routes(final_us_v4)
+    if not optimized_us_v4:
+        raise ValueError(f"US-special source produced no usable IPv4 CIDRs: {directory}")
+    logger.info(
+        "US-special IPv4: %d ASNs + %d local -> %d routes",
+        len(asn_set),
+        len(local_v4),
+        len(optimized_us_v4),
+    )
+
+    optimized_us_v6: list[str] = []
+    if enable_ipv6:
+        final_us_v6 = filter_non_routable_v6(merge_routes([local_v6, asn_v6]))
+        optimized_us_v6 = optimize_routes(final_us_v6)
+        logger.info(
+            "US-special IPv6: %d ASNs + %d local -> %d routes",
+            len(asn_set),
+            len(local_v6),
+            len(optimized_us_v6),
+        )
+    return optimized_us_v4, optimized_us_v6
+
+
 def _load_cidr_sources(
     directory: str,
     ip_version: int = 4,
     include_cache: Optional[dict[str, str]] = None,
+    exclude_filenames: Optional[set[str]] = None,
 ) -> list[str]:
-    sources = load_cidr_directory(directory, ip_version=ip_version)
+    sources = load_cidr_directory(
+        directory,
+        ip_version=ip_version,
+        exclude_filenames=exclude_filenames,
+    )
     cidrs = list(sources.cidrs)
     reviewed_scopes = (
         REVIEWED_CIDR_SOURCE_SCOPES_V6 if ip_version == 6 else REVIEWED_CIDR_SOURCE_SCOPES

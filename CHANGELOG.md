@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] - 2026-11-27
+
+### Added
+- Curated US-specialized routing table support via `--us-special-dir` and `us_special/asns.txt` (seeded with `AS399358` Anthropic / Claude), generating `us_routes.txt` and `us_routes6.txt` from live BGP prefixes and optional local CIDRs without pulling in shared CDNs
+- `parse_asn_list()`, `load_asn_file()`, and `write_custom_routes()` helpers plus 2 new unit/integration tests (191 tests total)
+
+### Changed
+- Scheduled workflow (`.github/workflows/update-routes.yml`) now builds and publishes `us_routes.txt` and `us_routes6.txt` to `main`, `data` branch, and Nightly Releases
+
 ## [0.4.0] - 2026-11-27
 
 ### Added

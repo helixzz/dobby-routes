@@ -72,7 +72,7 @@ fetcher (HTTP GET)
 ## Testing
 
 ```bash
-pytest                # 189 tests, all offline (HTTP mocked)
+pytest                # 191 tests, all offline (HTTP mocked)
 pytest -v             # verbose output
 pytest tests/test_parser.py   # run specific module tests
 ```

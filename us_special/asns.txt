@@ -1,0 +1,4 @@
+# Curated independent US-only ASNs for US-East specialized routing (table 112 on NYCWAN01).
+# Keep this list strictly to dedicated, non-shared-CDN ASNs where US residential/business
+# native IP egress is strongly beneficial (never add shared CDNs like Cloudflare/Akamai/Fastly/Google).
+AS399358  # Anthropic, PBC (claude.ai, api.anthropic.com)

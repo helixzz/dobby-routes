@@ -201,6 +201,8 @@ https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_annotated
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_inverse.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_bgp.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_bgp_inverse.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/us_routes.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/us_routes6.txt
 ```
 
 ## Running Tests
