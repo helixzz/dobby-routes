@@ -12,11 +12,15 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+_REPO_URL = "https://github.com/helixzz/dobby-routes"
+
+
 def _user_agent() -> str:
     try:
-        return f"dobby-routes/{_pkg_version('dobby-routes')}"
+        version = _pkg_version("dobby-routes")
     except PackageNotFoundError:
-        return "dobby-routes/dev"
+        version = "dev"
+    return f"dobby-routes/{version} (+{_REPO_URL})"
 
 
 _USER_AGENT = _user_agent()
@@ -27,12 +31,14 @@ GITHUB_OPERATOR_URLS = {
     "unicom": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/unicom.txt",
     "cmcc": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cmcc.txt",
     "cernet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cernet.txt",
+    "cstnet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cstnet.txt",
 }
 GITHUB_OPERATOR_URLS_V6 = {
     "chinanet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/chinanet6.txt",
     "unicom": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/unicom6.txt",
     "cmcc": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cmcc6.txt",
     "cernet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cernet6.txt",
+    "cstnet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cstnet6.txt",
 }
 GITHUB_CHINA_URL = "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/china.txt"
 GITHUB_CHINA_URL_V6 = (
@@ -42,6 +48,12 @@ CHNROUTES2_URL = "https://chnroutes2.cdn.skk.moe/chnroutes.txt"
 CHNROUTES2_FALLBACK_URL = (
     "https://raw.githubusercontent.com/misakaio/chnroutes2/master/chnroutes.txt"
 )
+AWS_IP_RANGES_URL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
+CLOUDFLARE_IPV4_URL = "https://www.cloudflare.com/ips-v4"
+CLOUDFLARE_IPV6_URL = "https://www.cloudflare.com/ips-v6"
+GOOGLE_IP_RANGES_URL = "https://www.gstatic.com/ipranges/goog.json"
+BGP_TABLE_URL = "https://bgp.tools/table.txt"
+BGP_ASNS_URL = "https://bgp.tools/asns.csv"
 TELEGRAM_CIDR_SOURCE_URL = "https://core.telegram.org/resources/cidr.txt"
 REVIEWED_CIDR_SOURCE_SCOPES = {
     TELEGRAM_CIDR_SOURCE_URL: (
@@ -219,7 +231,7 @@ def fetch_operator_v6(operator: str) -> str:
 
 def _fetch_operator_map(urls: dict[str, str]) -> dict[str, str]:
     fetched: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=len(urls) or 1) as executor:
         futures = {executor.submit(fetch_url, url): name for name, url in urls.items()}
         for future in as_completed(futures):
             name = futures[future]
@@ -237,6 +249,30 @@ def fetch_all_operators_v6() -> dict[str, str]:
 
 def fetch_china_v6() -> str:
     return fetch_url(GITHUB_CHINA_URL_V6)
+
+
+def fetch_aws_ip_ranges() -> str:
+    return fetch_url(AWS_IP_RANGES_URL)
+
+
+def fetch_cloudflare_v4() -> str:
+    return fetch_url(CLOUDFLARE_IPV4_URL)
+
+
+def fetch_cloudflare_v6() -> str:
+    return fetch_url(CLOUDFLARE_IPV6_URL)
+
+
+def fetch_google_ip_ranges() -> str:
+    return fetch_url(GOOGLE_IP_RANGES_URL)
+
+
+def fetch_bgp_table() -> str:
+    return fetch_url(BGP_TABLE_URL, timeout=60)
+
+
+def fetch_bgp_asns() -> str:
+    return fetch_url(BGP_ASNS_URL, timeout=30)
 
 
 def fetch_chnroutes2() -> str:

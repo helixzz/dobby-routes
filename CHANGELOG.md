@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-11-27
+
+### Added
+- Official AWS China (`cn-north-1` / `cn-northwest-1`) IPv4 and IPv6 source via `--aws-cn` (`ip-ranges.amazonaws.com/ip-ranges.json`), closing gaps for non-APNIC Chinese cloud allocations
+- Defensive overseas protection via `--protect-overseas`, subtracting official Cloudflare (`ips-v4`/`ips-v6`) and Google (`goog.json`) overseas IP ranges
+- China Science and Technology Network (`cstnet`, AS7497) added to GitHub IPv4 and IPv6 operator sources and annotations
+- Global real-time BGP integration via `--bgp` (`bgp.tools/table.txt` and `bgp.tools/asns.csv`):
+  - Enriches generic `# CN` annotations in `cn_routes_annotated.txt` and `cn_routes6_annotated.txt` with real BGP origin ASNs and organization names
+  - Generates provably optimal lossless BGP-minimized tables (`cn_routes_bgp.txt`, `cn_routes_bgp_inverse.txt`, `cn_routes6_bgp.txt`, `cn_routes6_bgp_inverse.txt`) that bridge unannounced gaps for 40%–92% smaller BGP/router prefix counts while preserving 100% accuracy for all active global BGP prefixes and local allowlists/denylists
+- Built-in canary IP validation (`--verify-canaries`) and relative baseline drift guardrail (`--baseline-stats` + `--max-drift-pct`) in `validator.py`, failing closed before writing any output files
+- Multi-format router/proxy exports via `--formats bird,routeros,nftables,singbox` under `<output-dir>/formats/` (BIRD2 prefix sets, RouterOS `.rsc` address-lists, nftables sets, sing-box v3 rule-set JSON)
+- 20 new unit and integration tests covering AWS/Google/BGP parsing, lossless BGP minimization, BGP ASN annotation enrichment, canary & drift validators, extra export formats, and CLI integration (189 tests total)
+
+### Changed
+- Updated User-Agent to include the repository URL (`dobby-routes/<version> (+https://github.com/helixzz/dobby-routes)`) for upstream compliance
+- Upgraded scheduled workflow (`.github/workflows/update-routes.yml`) to run every 6 hours (`17 */6 * * *` UTC) with `--aws-cn`, `--protect-overseas`, `--bgp`, `--verify-canaries`, `--max-drift-pct 15`, and `--formats bird,routeros,nftables,singbox`
+
 ## [0.3.0] - 2026-11-27
 
 ### Added

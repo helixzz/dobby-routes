@@ -8,9 +8,11 @@ from dobby_routes.optimizer import (
     annotate_routes,
     compute_complement,
     compute_complement_v6,
+    enrich_annotations_with_bgp,
     filter_non_routable,
     filter_non_routable_v6,
     merge_routes,
+    minimize_routed_cidrs,
     optimize_routes,
 )
 
@@ -281,3 +283,50 @@ def test_compute_complement_v6_plus_original_equals_routable_universe_v6():
     assert (complement_set | ipset) == ROUTABLE_UNIVERSE_V6
     networks = [IPNetwork(c) for c in complement]
     assert networks == sorted(networks)
+
+
+def test_minimize_routed_cidrs_bridges_unannounced_gaps_losslessly():
+    universe = IPSet(["1.0.0.0/22"])
+    # 1.0.0.0/24 and 1.0.2.0/24 are required; 1.0.1.0/24 is unannounced don't-care;
+    # 1.0.3.0/24 is forbidden. Maximal valid blocks in (universe - forbidden) are
+    # 1.0.0.0/23 and 1.0.2.0/24 — both intersect required, reducing 2+ gaps cleanly.
+    required = IPSet(["1.0.0.0/24", "1.0.2.0/24"])
+    forbidden = IPSet(["1.0.3.0/24"])
+
+    result = minimize_routed_cidrs(required, forbidden, universe)
+
+    result_set = IPSet(result)
+    assert (required - result_set) == IPSet()
+    assert (result_set & forbidden) == IPSet()
+    assert result == ["1.0.0.0/23", "1.0.2.0/24"]
+
+
+def test_minimize_routed_cidrs_drops_empty_candidate_blocks():
+    universe = IPSet(["1.0.0.0/22"])
+    required = IPSet(["1.0.0.0/24"])
+    forbidden = IPSet(["1.0.1.0/24"])
+
+    # Candidate blocks are 1.0.0.0/24 and 1.0.2.0/23; 1.0.2.0/23 has no required IPs so is dropped.
+    assert minimize_routed_cidrs(required, forbidden, universe) == ["1.0.0.0/24"]
+
+
+def test_enrich_annotations_with_bgp_upgrades_generic_cn_only():
+    annotated = [
+        ("1.0.1.0/24", "AS4134/AS4812 China Telecom"),
+        ("111.127.0.0/16", "CN"),
+        ("223.5.5.0/24", "CN"),
+    ]
+    bgp_entries = [
+        ("1.0.1.0/24", 99999),
+        ("111.127.0.0/16", 7641),
+        ("223.5.5.0/25", 37963),
+        ("223.5.5.128/25", 45102),
+    ]
+    asn_names = {7641: "China Broadnet", 37963: "Alibaba", 45102: "Alibaba-US"}
+
+    enriched = enrich_annotations_with_bgp(annotated, bgp_entries, asn_names)
+
+    assert enriched[0] == ("1.0.1.0/24", "AS4134/AS4812 China Telecom")
+    assert enriched[1] == ("111.127.0.0/16", "AS7641 China Broadnet")
+    # Equal overlap (128 IPs each): tie breaks deterministically by lower ASN
+    assert enriched[2] == ("223.5.5.0/24", "AS37963 Alibaba")

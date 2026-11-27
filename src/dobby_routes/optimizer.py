@@ -1,4 +1,5 @@
 import logging
+from bisect import bisect_left
 
 from netaddr import AddrFormatError, IPNetwork, IPSet
 
@@ -9,6 +10,7 @@ OPERATOR_INFO = {
     "unicom": "AS4837/AS9929 China Unicom",
     "cmcc": "AS9808 China Mobile",
     "cernet": "AS4538 CERNET",
+    "cstnet": "AS7497 CSTNET",
 }
 
 # IANA Special-Purpose Address Registry + Multicast + Reserved
@@ -141,3 +143,82 @@ def annotate_routes(
 
     labeled.sort(key=lambda t: t[0])
     return [(str(net), label) for net, label in labeled]
+
+
+def minimize_routed_cidrs(
+    required: IPSet,
+    forbidden: IPSet,
+    universe: IPSet,
+) -> list[str]:
+    # Provably optimal minimum CIDR cover for `required` disjoint from `forbidden` in `universe`:
+    # every maximal CIDR in (universe - forbidden) intersecting `required` is retained once.
+    candidates = universe - forbidden
+    effective_required = required & candidates
+    if not effective_required:
+        return []
+
+    req_ranges = [(net.first, net.last) for net in effective_required.iter_cidrs()]
+    req_idx = 0
+    req_len = len(req_ranges)
+    selected: list[IPNetwork] = []
+
+    for cand in candidates.iter_cidrs():
+        c_first = cand.first
+        c_last = cand.last
+        while req_idx < req_len and req_ranges[req_idx][1] < c_first:
+            req_idx += 1
+        if req_idx < req_len and req_ranges[req_idx][0] <= c_last:
+            selected.append(cand)
+
+    selected.sort()
+    return [str(net) for net in selected]
+
+
+def enrich_annotations_with_bgp(
+    annotated: list[tuple[str, str]],
+    bgp_entries: list[tuple[str, int]],
+    asn_names: dict[int, str],
+) -> list[tuple[str, str]]:
+    if not annotated or not bgp_entries:
+        return annotated
+
+    cn_slots: list[tuple[int, int, int]] = []
+    for idx, (cidr, label) in enumerate(annotated):
+        if label == "CN":
+            net = IPNetwork(cidr)
+            cn_slots.append((net.first, net.last, idx))
+
+    if not cn_slots:
+        return annotated
+
+    cn_slots.sort(key=lambda item: item[0])
+    cn_lasts = [item[1] for item in cn_slots]
+    overlap_scores: dict[int, dict[int, int]] = {}
+
+    for cidr, asn in bgp_entries:
+        try:
+            net = IPNetwork(cidr)
+        except (ValueError, TypeError, AddrFormatError):
+            continue
+        b_first = net.first
+        b_last = net.last
+        pos = bisect_left(cn_lasts, b_first)
+        while pos < len(cn_slots) and cn_slots[pos][0] <= b_last:
+            c_first, c_last, orig_idx = cn_slots[pos]
+            overlap = min(c_last, b_last) - max(c_first, b_first) + 1
+            if overlap > 0:
+                per_asn = overlap_scores.setdefault(orig_idx, {})
+                per_asn[asn] = per_asn.get(asn, 0) + overlap
+            pos += 1
+
+    if not overlap_scores:
+        return annotated
+
+    enriched = list(annotated)
+    for orig_idx, per_asn in overlap_scores.items():
+        best_asn = min(per_asn.items(), key=lambda item: (-item[1], item[0]))[0]
+        org_name = asn_names.get(best_asn)
+        new_label = f"AS{best_asn} {org_name}" if org_name else f"AS{best_asn}"
+        cidr, _ = enriched[orig_idx]
+        enriched[orig_idx] = (cidr, new_label)
+    return enriched

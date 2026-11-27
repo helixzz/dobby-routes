@@ -27,8 +27,13 @@ dobby-routes
 # Generate both IPv4 and IPv6 route tables
 dobby-routes --ipv6
 
-# Specify output directory and optional stats JSON
-dobby-routes --output-dir /path/to/output --stats-json /path/to/stats.json
+# Full production pipeline: IPv6 + AWS China + overseas protection + BGP optimization + canaries + extra formats
+dobby-routes --ipv6 --aws-cn --protect-overseas --bgp --verify-canaries \
+  --formats bird,routeros,nftables,singbox
+
+# Specify output directory and optional stats JSON / baseline drift guardrail
+dobby-routes --output-dir /path/to/output --stats-json /path/to/stats.json \
+  --baseline-stats /path/to/prev-stats.json --max-drift-pct 15
 
 # Enforce minimum route count guardrails before writing files
 dobby-routes --min-routes 4000 --min-inverse-routes 8000
@@ -146,6 +151,23 @@ globally routable unicast space (`2000::/3` minus documentation, Teredo, 6to4, b
 other special-purpose blocks), and `cn_routes6_inverse.txt` is the complement within that routable
 IPv6 universe.
 
+### `cn_routes_bgp*.txt` and `cn_routes6_bgp*.txt` (`--bgp`)
+
+Lossless BGP-active minimized forward and inverse route tables computed against the live global
+BGP table (`bgp.tools/table.txt`). By bridging unannounced public address gaps without touching any
+active opposite-side BGP prefix or local allowlist/denylist entry, prefix counts drop by ~40%–92%
+(ideal for hardware routers and BGP sessions) while keeping 100% routing accuracy for every active
+Internet route. Enabling `--bgp` also enriches generic `# CN` entries in the annotated tables with
+real BGP origin ASN and organization labels.
+
+### Extra Router / Proxy Formats (`--formats bird,routeros,nftables,singbox`)
+
+Written under `<output-dir>/formats/`:
+- `formats/bird/`: BIRD2 prefix-set `.conf` files (`CN_ROUTES_V4`, `CN_ROUTES_INVERSE_V4`, IPv6 & BGP variants)
+- `formats/routeros/`: RouterOS `/ip firewall address-list` & `/ipv6 firewall address-list` `.rsc` scripts
+- `formats/nftables/`: nftables `define ... = { ... }` `.nft` set definitions
+- `formats/singbox/`: sing-box v3 rule-set source `.json` files (IPv4 + IPv6 combined)
+
 ## Data Sources
 
 | Source | URL | Update Frequency |
@@ -155,12 +177,16 @@ IPv6 universe.
 | China Unicom | `gaoyifan/china-operator-ip` (`unicom.txt`, `unicom6.txt`) | Daily |
 | China Mobile | `gaoyifan/china-operator-ip` (`cmcc.txt`, `cmcc6.txt`) | Daily |
 | CERNET | `gaoyifan/china-operator-ip` (`cernet.txt`, `cernet6.txt`) | Daily |
+| CSTNET | `gaoyifan/china-operator-ip` (`cstnet.txt`, `cstnet6.txt`) | Daily |
 | China IPv6 aggregate | `gaoyifan/china-operator-ip` (`china6.txt`) | Daily |
 | chnroutes2 | `chnroutes2.cdn.skk.moe` optimized list; fallback to `misakaio/chnroutes2` | 2 hours / hourly fallback |
+| AWS China (`--aws-cn`) | `ip-ranges.amazonaws.com/ip-ranges.json` (`cn-*` regions) | Continuous |
+| Overseas protection (`--protect-overseas`) | Cloudflare `ips-v4`/`ips-v6` + Google `goog.json` | Continuous |
+| Global BGP table & ASNs (`--bgp`) | `bgp.tools/table.txt` + `bgp.tools/asns.csv` | Continuous |
 
 ## Pre-built Route Tables
 
-Route tables are updated daily via GitHub Actions and published to the [`data`](https://github.com/helixzz/dobby-routes/tree/data) branch. The scheduled workflow automatically uses the repository's `allowlists/` and `denylists/` directories with explicit workspace paths, enables `--ipv6`, enforces minimum route count guardrails, skips no-op timestamp-only updates, and retains the last 30 days of nightly releases.
+Route tables are checked every 6 hours via GitHub Actions and published to the [`data`](https://github.com/helixzz/dobby-routes/tree/data) branch whenever route data actually changes. The scheduled workflow automatically uses the repository's `allowlists/` and `denylists/`, enables `--ipv6`, `--aws-cn`, `--protect-overseas`, `--bgp`, `--verify-canaries`, exports `formats/{bird,routeros,nftables,singbox}`, enforces minimum route and ±15% drift guardrails, and retains the last 30 days of nightly releases.
 
 Direct download links:
 
@@ -168,9 +194,13 @@ Direct download links:
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_annotated.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_inverse.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_bgp.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_bgp_inverse.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_annotated.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_inverse.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_bgp.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_bgp_inverse.txt
 ```
 
 ## Running Tests

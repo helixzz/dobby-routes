@@ -1,7 +1,17 @@
 import json
 import os
 
-from dobby_routes.output import write_annotated, write_complement, write_optimized, write_stats
+from dobby_routes.output import (
+    write_annotated,
+    write_bgp_routes,
+    write_bird_prefix_set,
+    write_complement,
+    write_nftables_set,
+    write_optimized,
+    write_routeros_address_list,
+    write_singbox_ruleset,
+    write_stats,
+)
 
 
 def test_write_annotated_creates_file(tmp_path):
@@ -152,3 +162,37 @@ def test_write_stats_json(tmp_path):
     write_stats(path, payload)
     loaded = json.loads(open(path, encoding="utf-8").read())
     assert loaded == payload
+
+
+def test_write_bgp_and_extra_formats(tmp_path):
+    ts = "2026-11-27 00:00:00"
+    bgp_path = str(tmp_path / "bgp.txt")
+    write_bgp_routes(bgp_path, ["1.0.1.0/24"], timestamp=ts, ip_version=4, inverse=True)
+    bgp_text = open(bgp_path, encoding="utf-8").read()
+    assert "Inverse IPv4 BGP-active minimized route table" in bgp_text
+    assert "1.0.1.0/24\n" in bgp_text
+
+    bird_path = str(tmp_path / "bird.conf")
+    write_bird_prefix_set(bird_path, "CN_ROUTES_V4", ["1.0.1.0/24", "1.0.2.0/23"], timestamp=ts)
+    bird_text = open(bird_path, encoding="utf-8").read()
+    assert "define CN_ROUTES_V4 = [" in bird_text
+    assert "  1.0.1.0/24+,\n  1.0.2.0/23+\n];" in bird_text
+
+    ros_path = str(tmp_path / "ros.rsc")
+    write_routeros_address_list(
+        ros_path, "cn_routes6", ["2400:3200::/32"], timestamp=ts, ip_version=6
+    )
+    ros_text = open(ros_path, encoding="utf-8").read()
+    assert "/ipv6 firewall address-list" in ros_text
+    assert 'add list="cn_routes6" address=2400:3200::/32' in ros_text
+
+    nft_path = str(tmp_path / "cn.nft")
+    write_nftables_set(nft_path, "cn_routes_v4", ["1.0.1.0/24", "1.0.2.0/23"], timestamp=ts)
+    nft_text = open(nft_path, encoding="utf-8").read()
+    assert "define cn_routes_v4 = {" in nft_text
+    assert "  1.0.1.0/24,\n  1.0.2.0/23\n}" in nft_text
+
+    sb_path = str(tmp_path / "cn.json")
+    write_singbox_ruleset(sb_path, ["1.0.1.0/24", "2400:3200::/32"])
+    sb_data = json.loads(open(sb_path, encoding="utf-8").read())
+    assert sb_data == {"version": 3, "rules": [{"ip_cidr": ["1.0.1.0/24", "2400:3200::/32"]}]}

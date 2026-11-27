@@ -2,7 +2,7 @@ name: Update Route Tables
 
 on:
   schedule:
-    - cron: "17 1 * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,63 @@ jobs:
       - name: Install dependencies
         run: pip install -e .
 
+      - name: Build baseline stats from previous outputs
+        run: |
+          python3 - << 'EOF'
+          import json
+          import os
+          from netaddr import IPNetwork, IPSet
+
+          def read_cidrs(path: str) -> list[str]:
+              if not os.path.isfile(path):
+                  return []
+              with open(path, encoding="utf-8") as f:
+                  return [
+                      line.strip()
+                      for line in f
+                      if line.strip() and not line.lstrip().startswith("#")
+                  ]
+
+          baseline: dict[str, object] = {}
+
+          v4_fwd = read_cidrs("output/cn_routes.txt")
+          v4_inv = read_cidrs("output/cn_routes_inverse.txt")
+          if v4_fwd and v4_inv:
+              baseline["ipv4"] = {
+                  "forward": len(v4_fwd),
+                  "inverse": len(v4_inv),
+                  "addresses": int(IPSet([IPNetwork(c) for c in v4_fwd]).size),
+              }
+
+          v6_fwd = read_cidrs("output/cn_routes6.txt")
+          v6_inv = read_cidrs("output/cn_routes6_inverse.txt")
+          if v6_fwd and v6_inv:
+              baseline["ipv6"] = {
+                  "forward": len(v6_fwd),
+                  "inverse": len(v6_inv),
+              }
+
+          v4_bgp_fwd = read_cidrs("output/cn_routes_bgp.txt")
+          v4_bgp_inv = read_cidrs("output/cn_routes_bgp_inverse.txt")
+          if v4_bgp_fwd and v4_bgp_inv:
+              baseline["ipv4_bgp"] = {
+                  "forward": len(v4_bgp_fwd),
+                  "inverse": len(v4_bgp_inv),
+              }
+
+          v6_bgp_fwd = read_cidrs("output/cn_routes6_bgp.txt")
+          v6_bgp_inv = read_cidrs("output/cn_routes6_bgp_inverse.txt")
+          if v6_bgp_fwd and v6_bgp_inv:
+              baseline["ipv6_bgp"] = {
+                  "forward": len(v6_bgp_fwd),
+                  "inverse": len(v6_bgp_inv),
+              }
+
+          with open("/tmp/baseline-stats.json", "w", encoding="utf-8") as f:
+              json.dump(baseline, f, indent=2)
+          print("Baseline stats:", json.dumps(baseline))
+          EOF
+
       - name: Generate route tables
         run: |
           dobby-routes \
@@ -33,10 +90,17 @@ jobs:
             --allowlist-dir "$GITHUB_WORKSPACE/allowlists" \
             --denylist-dir "$GITHUB_WORKSPACE/denylists" \
             --ipv6 \
+            --aws-cn \
+            --protect-overseas \
+            --bgp \
+            --verify-canaries \
+            --formats bird,routeros,nftables,singbox \
             --min-routes 4000 \
             --min-inverse-routes 8000 \
             --min-ipv6-routes 1500 \
             --min-ipv6-inverse-routes 10000 \
+            --baseline-stats /tmp/baseline-stats.json \
+            --max-drift-pct 15 \
             --stats-json /tmp/dobby-stats.json
 
       - name: Detect route changes and prepare summary
@@ -53,9 +117,13 @@ jobs:
               "cn_routes.txt",
               "cn_routes_inverse.txt",
               "cn_routes_annotated.txt",
+              "cn_routes_bgp.txt",
+              "cn_routes_bgp_inverse.txt",
               "cn_routes6.txt",
               "cn_routes6_inverse.txt",
               "cn_routes6_annotated.txt",
+              "cn_routes6_bgp.txt",
+              "cn_routes6_bgp_inverse.txt",
           ]
 
           def data_lines(text: str) -> list[str]:
@@ -96,17 +164,23 @@ jobs:
           date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
           ipv4_stats = stats["ipv4"]
           ipv6_stats = stats["ipv6"]
+          ipv4_bgp = stats["ipv4_bgp"]
+          ipv6_bgp = stats["ipv6_bgp"]
 
           lines = [
               f"Auto-generated route tables ({date_str} UTC)",
               "",
-              "| File | Routes | Daily Diff |",
-              "|------|-------:|-----------:|",
+              "| File | Routes | Diff |",
+              "|------|-------:|-----:|",
           ]
           for name, count, delta in rows:
               lines.append(f"| `{name}` | {count:,} | {delta} |")
           lines.append("")
           lines.append(f"IPv4 covered addresses: `{ipv4_stats['addresses']:,}`")
+          lines.append(
+              "Additional formats on `data` branch: `formats/bird/`, `formats/routeros/`, "
+              "`formats/nftables/`, `formats/singbox/`"
+          )
           notes = "\n".join(lines) + "\n"
 
           with open("/tmp/release-notes.md", "w", encoding="utf-8") as f:
@@ -117,7 +191,10 @@ jobs:
               with open(summary_path, "a", encoding="utf-8") as f:
                   f.write("## Dobby Routes Update\n\n")
                   if not any_changed:
-                      f.write("No effective route data changes detected (header timestamp only); commit and release skipped.\n\n")
+                      f.write(
+                          "No effective route data changes detected (header timestamp only); "
+                          "commit and release skipped.\n\n"
+                      )
                   f.write(notes)
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
@@ -125,10 +202,12 @@ jobs:
               f.write(f"date={date_str}\n")
               f.write(f"routes={ipv4_stats['forward']}\n")
               f.write(f"inverse={ipv4_stats['inverse']}\n")
-              f.write(f"annotated={ipv4_stats['annotated']}\n")
               f.write(f"routes6={ipv6_stats['forward']}\n")
               f.write(f"inverse6={ipv6_stats['inverse']}\n")
-              f.write(f"annotated6={ipv6_stats['annotated']}\n")
+              f.write(f"bgp_routes={ipv4_bgp['forward']}\n")
+              f.write(f"bgp_inverse={ipv4_bgp['inverse']}\n")
+              f.write(f"bgp_routes6={ipv6_bgp['forward']}\n")
+              f.write(f"bgp_inverse6={ipv6_bgp['inverse']}\n")
           EOF
 
       - name: Commit to main branch
@@ -140,31 +219,47 @@ jobs:
             output/cn_routes_annotated.txt \
             output/cn_routes.txt \
             output/cn_routes_inverse.txt \
+            output/cn_routes_bgp.txt \
+            output/cn_routes_bgp_inverse.txt \
             output/cn_routes6_annotated.txt \
             output/cn_routes6.txt \
-            output/cn_routes6_inverse.txt
+            output/cn_routes6_inverse.txt \
+            output/cn_routes6_bgp.txt \
+            output/cn_routes6_bgp_inverse.txt \
+            output/formats
           DATE=${{ steps.diff-check.outputs.date }}
           ROUTES=${{ steps.diff-check.outputs.routes }}
           INVERSE=${{ steps.diff-check.outputs.inverse }}
           ROUTES6=${{ steps.diff-check.outputs.routes6 }}
           INVERSE6=${{ steps.diff-check.outputs.inverse6 }}
+          BGP_R4=${{ steps.diff-check.outputs.bgp_routes }}
+          BGP_I4=${{ steps.diff-check.outputs.bgp_inverse }}
+          BGP_R6=${{ steps.diff-check.outputs.bgp_routes6 }}
+          BGP_I6=${{ steps.diff-check.outputs.bgp_inverse6 }}
           git commit -m "data: update route tables ${DATE}" \
-            -m "IPv4 forward: ${ROUTES}, inverse: ${INVERSE}" \
-            -m "IPv6 forward: ${ROUTES6}, inverse: ${INVERSE6}"
+            -m "IPv4 forward: ${ROUTES}, inverse: ${INVERSE} (BGP-min: ${BGP_R4} / ${BGP_I4})" \
+            -m "IPv6 forward: ${ROUTES6}, inverse: ${INVERSE6} (BGP-min: ${BGP_R6} / ${BGP_I6})"
           git push origin main
 
       - name: Update data branch
         if: steps.diff-check.outputs.changed == 'true'
         run: |
+          rm -rf /tmp/dobby-data-stage
+          mkdir -p /tmp/dobby-data-stage
           for f in \
             cn_routes_annotated.txt \
             cn_routes.txt \
             cn_routes_inverse.txt \
+            cn_routes_bgp.txt \
+            cn_routes_bgp_inverse.txt \
             cn_routes6_annotated.txt \
             cn_routes6.txt \
-            cn_routes6_inverse.txt; do
-            cp "output/${f}" "/tmp/${f}"
+            cn_routes6_inverse.txt \
+            cn_routes6_bgp.txt \
+            cn_routes6_bgp_inverse.txt; do
+            cp "output/${f}" "/tmp/dobby-data-stage/${f}"
           done
+          cp -r output/formats /tmp/dobby-data-stage/formats
           git fetch origin data || true
           if git rev-parse --verify origin/data >/dev/null 2>&1; then
             git checkout data
@@ -176,18 +271,29 @@ jobs:
             cn_routes_annotated.txt \
             cn_routes.txt \
             cn_routes_inverse.txt \
+            cn_routes_bgp.txt \
+            cn_routes_bgp_inverse.txt \
             cn_routes6_annotated.txt \
             cn_routes6.txt \
-            cn_routes6_inverse.txt; do
-            cp "/tmp/${f}" .
+            cn_routes6_inverse.txt \
+            cn_routes6_bgp.txt \
+            cn_routes6_bgp_inverse.txt; do
+            cp "/tmp/dobby-data-stage/${f}" .
           done
+          rm -rf formats
+          cp -r /tmp/dobby-data-stage/formats ./formats
           git add \
             cn_routes_annotated.txt \
             cn_routes.txt \
             cn_routes_inverse.txt \
+            cn_routes_bgp.txt \
+            cn_routes_bgp_inverse.txt \
             cn_routes6_annotated.txt \
             cn_routes6.txt \
-            cn_routes6_inverse.txt
+            cn_routes6_inverse.txt \
+            cn_routes6_bgp.txt \
+            cn_routes6_bgp_inverse.txt \
+            formats
           DATE=${{ steps.diff-check.outputs.date }}
           if ! git diff --cached --quiet; then
             git commit -m "data: update route tables ${DATE}"
@@ -213,9 +319,13 @@ jobs:
             output/cn_routes.txt \
             output/cn_routes_annotated.txt \
             output/cn_routes_inverse.txt \
+            output/cn_routes_bgp.txt \
+            output/cn_routes_bgp_inverse.txt \
             output/cn_routes6.txt \
             output/cn_routes6_annotated.txt \
-            output/cn_routes6_inverse.txt
+            output/cn_routes6_inverse.txt \
+            output/cn_routes6_bgp.txt \
+            output/cn_routes6_bgp_inverse.txt
 
       - name: Prune old nightly releases (keep 30 days)
         if: steps.diff-check.outputs.changed == 'true'

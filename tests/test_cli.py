@@ -640,3 +640,202 @@ def test_run_empty_apnic_fails_closed(mock_apnic, tmp_path):
 def test_run_empty_chnroutes2_fails_closed(mock_ops, mock_chn, tmp_path):
     with pytest.raises(ValueError, match="chnroutes2 source returned no usable IPv4 CIDRs"):
         _run(_make_args(tmp_path, skip_apnic=True))
+
+
+def test_v040_cli_flags():
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "--aws-cn",
+            "--protect-overseas",
+            "--bgp",
+            "--verify-canaries",
+            "--baseline-stats",
+            "/tmp/base.json",
+            "--max-drift-pct",
+            "12.5",
+            "--formats",
+            "bird,routeros,nftables,singbox",
+        ]
+    )
+    assert args.aws_cn is True
+    assert args.protect_overseas is True
+    assert args.bgp is True
+    assert args.verify_canaries is True
+    assert args.baseline_stats == "/tmp/base.json"
+    assert args.max_drift_pct == 12.5
+    assert args.formats == "bird,routeros,nftables,singbox"
+
+
+SAMPLE_AWS_JSON = json.dumps(
+    {
+        "prefixes": [
+            {"ip_prefix": "52.80.0.0/16", "region": "cn-north-1"},
+            {"ip_prefix": "3.0.0.0/16", "region": "us-east-1"},
+        ],
+        "ipv6_prefixes": [
+            {"ipv6_prefix": "2406:dafe::/32", "region": "cn-north-1"},
+            {"ipv6_prefix": "2600:1f18::/32", "region": "us-east-1"},
+        ],
+    }
+)
+SAMPLE_GOOGLE_JSON = json.dumps(
+    {
+        "prefixes": [
+            {"ipv4Prefix": "8.8.8.0/24"},
+            {"ipv6Prefix": "2001:4860::/32"},
+        ]
+    }
+)
+SAMPLE_BGP_TABLE = (
+    "1.0.1.0/24 4134\n"
+    "52.80.0.0/16 58879\n"
+    "114.114.114.0/24 4134\n"
+    "223.5.5.0/24 37963\n"
+    "119.29.29.0/24 45090\n"
+    "180.76.76.0/24 55967\n"
+    "1.1.1.0/24 13335\n"
+    "8.8.8.0/24 15169\n"
+    "9.9.9.0/24 19281\n"
+    "104.18.32.0/24 13335\n"
+    "149.154.160.0/20 62041\n"
+    "47.242.0.0/16 45102\n"
+    "43.132.0.0/16 132203\n"
+    "2400:3200::/32 37963\n"
+    "2402:4e00::/32 45090\n"
+    "2001:da8::/32 4538\n"
+    "2406:dafe::/32 58879\n"
+    "2606:4700:4700::/48 13335\n"
+    "2001:4860:4860::/48 15169\n"
+    "2a0a:f280::/32 62041\n"
+)
+SAMPLE_BGP_ASNS = (
+    "asn,name,class,cc\n"
+    "AS58879,Beijing Sinnet Technology,Content,CN\n"
+    "AS37963,Alibaba Cloud,Content,CN\n"
+    "AS45090,Tencent Cloud,Content,CN\n"
+)
+SAMPLE_CANARY_APNIC = (
+    "apnic|CN|ipv4|114.114.114.0|256|20110414|allocated\n"
+    "apnic|CN|ipv4|223.5.5.0|256|20110414|allocated\n"
+    "apnic|CN|ipv4|119.29.29.0|256|20110414|allocated\n"
+    "apnic|CN|ipv4|180.76.76.0|256|20110414|allocated\n"
+    "apnic|CN|ipv4|8.8.8.0|256|20110414|allocated\n"
+    "apnic|CN|ipv6|2400:3200::|32|20120608|allocated\n"
+    "apnic|CN|ipv6|2402:4e00::|32|20120608|allocated\n"
+    "apnic|CN|ipv6|2001:da8::|32|20120608|allocated\n"
+)
+
+
+@patch("dobby_routes.cli.fetch_bgp_asns", return_value=SAMPLE_BGP_ASNS)
+@patch("dobby_routes.cli.fetch_bgp_table", return_value=SAMPLE_BGP_TABLE)
+@patch("dobby_routes.cli.fetch_google_ip_ranges", return_value=SAMPLE_GOOGLE_JSON)
+@patch("dobby_routes.cli.fetch_cloudflare_v6", return_value="2606:4700:4700::/48\n")
+@patch("dobby_routes.cli.fetch_cloudflare_v4", return_value="1.1.1.0/24\n104.18.32.0/24\n")
+@patch("dobby_routes.cli.fetch_aws_ip_ranges", return_value=SAMPLE_AWS_JSON)
+@patch("dobby_routes.cli.fetch_china_v6", return_value="2400:3200::/32\n")
+@patch("dobby_routes.cli.fetch_all_operators_v6", return_value={"chinanet": "2400:3200::/32\n"})
+@patch("dobby_routes.cli.fetch_chnroutes2", return_value="1.0.1.0/24\n")
+@patch("dobby_routes.cli.fetch_all_operators", side_effect=_mock_fetch_all_operators)
+@patch("dobby_routes.cli.fetch_apnic", return_value=SAMPLE_CANARY_APNIC)
+def test_run_v040_full_features_with_bgp_canaries_and_formats(
+    mock_apnic,
+    mock_ops,
+    mock_chn,
+    mock_ops_v6,
+    mock_china_v6,
+    mock_aws,
+    mock_cf4,
+    mock_cf6,
+    mock_google,
+    mock_bgp_table,
+    mock_bgp_asns,
+    tmp_path,
+):
+    stats_path = tmp_path / "stats.json"
+    args = Namespace(
+        output_dir=str(tmp_path),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(tmp_path / "denylists"),
+        skip_apnic=False,
+        skip_github=False,
+        ipv6=True,
+        aws_cn=True,
+        protect_overseas=True,
+        bgp=True,
+        verify_canaries=True,
+        baseline_stats=str(tmp_path / "missing-baseline.json"),
+        max_drift_pct=15.0,
+        formats="bird,routeros,nftables,singbox",
+        min_routes=1,
+        min_inverse_routes=1,
+        min_ipv6_routes=1,
+        min_ipv6_inverse_routes=1,
+        stats_json=str(stats_path),
+        verbose=False,
+    )
+
+    _run(args)
+
+    # AWS CN added, Google 8.8.8.0/24 excluded by --protect-overseas even though polluted in APNIC
+    v4_routes = _read_data_lines(os.path.join(str(tmp_path), "cn_routes.txt"))
+    assert "52.80.0.0/16" in v4_routes
+    assert "8.8.8.0/24" not in v4_routes
+
+    # Annotated enriched with BGP origin ASN name for non-operator route
+    annotated_text = open(os.path.join(str(tmp_path), "cn_routes_annotated.txt")).read()
+    assert "AS58879 Beijing Sinnet Technology" in annotated_text
+
+    # BGP-minimized outputs and all extra format outputs written
+    for rel in (
+        "cn_routes_bgp.txt",
+        "cn_routes_bgp_inverse.txt",
+        "cn_routes6_bgp.txt",
+        "cn_routes6_bgp_inverse.txt",
+        "formats/bird/cn_routes_v4.conf",
+        "formats/bird/cn_routes_bgp_inverse_v6.conf",
+        "formats/routeros/cn_routes_v4.rsc",
+        "formats/nftables/cn_routes_v4.nft",
+        "formats/singbox/cn_routes.json",
+        "formats/singbox/cn_routes_bgp_inverse.json",
+    ):
+        assert os.path.isfile(os.path.join(str(tmp_path), rel)), f"Missing {rel}"
+
+    stats = json.loads(stats_path.read_text(encoding="utf-8"))
+    assert "ipv4_bgp" in stats
+    assert "ipv6_bgp" in stats
+
+
+@patch("dobby_routes.cli.fetch_apnic", return_value=SAMPLE_APNIC)
+def test_run_drift_guardrail_blocks_writing_files(mock_apnic, tmp_path):
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({"ipv4": {"forward": 5000}}), encoding="utf-8")
+    args = Namespace(
+        output_dir=str(tmp_path / "out"),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(tmp_path / "denylists"),
+        skip_apnic=False,
+        skip_github=True,
+        baseline_stats=str(baseline),
+        max_drift_pct=15.0,
+        verbose=False,
+    )
+
+    with pytest.raises(ValueError, match="Drift guardrail failed"):
+        _run(args)
+
+    assert not os.path.exists(str(tmp_path / "out" / "cn_routes.txt"))
+
+
+def test_run_rejects_unknown_format(tmp_path):
+    args = Namespace(
+        output_dir=str(tmp_path),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(tmp_path / "denylists"),
+        skip_apnic=True,
+        skip_github=True,
+        formats="bird,unknownfmt",
+        verbose=False,
+    )
+    with pytest.raises(ValueError, match="Unsupported format"):
+        _run(args)

@@ -14,10 +14,11 @@
 ```
 src/dobby_routes/
 ├── cli.py         # CLI entry point — orchestrates the full pipeline
-├── fetcher.py     # HTTP layer — downloads raw data from APNIC + GitHub
-├── parser.py      # Parsing layer — APNIC delegated format + CIDR lists
-├── optimizer.py   # Core logic — merge, optimize, complement via netaddr IPSet
-└── output.py      # Output layer — writes 3 route table files
+├── fetcher.py     # HTTP layer — downloads raw data from APNIC, GitHub, AWS, Cloudflare, Google, bgp.tools
+├── parser.py      # Parsing layer — APNIC delegated, CIDR lists, AWS/Google JSON, bgp.tools table/ASNs
+├── optimizer.py   # Core logic — merge, optimize, complement, BGP minimization, ASN enrichment
+├── validator.py   # Quality guardrails — canary IP assertions and baseline drift checks
+└── output.py      # Output layer — route tables, stats JSON, BIRD/RouterOS/nftables/sing-box writers
 ```
 
 ### Data Flow
@@ -71,7 +72,7 @@ fetcher (HTTP GET)
 ## Testing
 
 ```bash
-pytest                # 169 tests, all offline (HTTP mocked)
+pytest                # 189 tests, all offline (HTTP mocked)
 pytest -v             # verbose output
 pytest tests/test_parser.py   # run specific module tests
 ```
@@ -127,7 +128,7 @@ Tests cover: CLI integration (argument parsing, skip modes, IPv6 dual-stack pipe
 ### CI/CD Caveats
 
 - **Test & Lint** (`.github/workflows/test.yml`): Runs on push/PR to main. Python 3.10–3.13 matrix for tests (Ubuntu 26.04 runner no longer ships EOL Python 3.9); ruff lint and format checks. Uses `actions/checkout@v7` and `actions/setup-python@v7` (Node.js 24 native).
-- **Update Route Tables** (`.github/workflows/update-routes.yml`): Daily cron at `17 1 * * *` UTC. Generates IPv4 + IPv6 route tables with `--ipv6` and minimum route guardrails, ignores timestamp-only diffs, commits to `main`, updates `data` branch, creates nightly release with diff summary, and prunes nightly releases older than 30 days.
+- **Update Route Tables** (`.github/workflows/update-routes.yml`): Runs every 6 hours (`17 */6 * * *` UTC). Generates IPv4 + IPv6 + BGP-minimized route tables and `formats/{bird,routeros,nftables,singbox}` with `--ipv6`, `--aws-cn`, `--protect-overseas`, `--bgp`, `--verify-canaries`, minimum route counts, and ±15% baseline drift guardrails; ignores timestamp-only diffs, commits to `main`, updates `data` branch, creates nightly release with diff summary, and prunes nightly releases older than 30 days.
 - **Nightly release tags** use `nightly-${DATE}` format; same-day re-triggers delete the existing tag/release before re-creating
 - **`output/*.txt` files are tracked in git** — they are auto-updated by the daily cron workflow, not gitignored
 

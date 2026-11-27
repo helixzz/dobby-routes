@@ -1,4 +1,7 @@
+import csv
+import io
 import ipaddress
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -196,3 +199,97 @@ def _parse_cidr(
 
 def _source_name(source: Optional[str]) -> str:
     return source if source is not None else "CIDR list"
+
+
+def parse_aws_ip_ranges(text: str, ip_version: int = 4, region_prefix: str = "cn-") -> list[str]:
+    _validate_ip_version(ip_version)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid AWS IP ranges JSON: {e}") from e
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid AWS IP ranges JSON: expected object")
+
+    list_key = "prefixes" if ip_version == 4 else "ipv6_prefixes"
+    cidr_key = "ip_prefix" if ip_version == 4 else "ipv6_prefix"
+    entries = payload.get(list_key)
+    if not isinstance(entries, list):
+        raise ValueError(f"Invalid AWS IP ranges JSON: missing {list_key}")
+
+    cidrs: list[str] = []
+    seen: set[str] = set()
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        region = item.get("region")
+        raw_cidr = item.get(cidr_key)
+        if not isinstance(region, str) or not region.startswith(region_prefix):
+            continue
+        if not isinstance(raw_cidr, str):
+            continue
+        cidr = _parse_cidr(raw_cidr.strip(), raw_cidr, "aws-ip-ranges", ip_version)
+        if cidr is not None and cidr not in seen:
+            seen.add(cidr)
+            cidrs.append(cidr)
+    return cidrs
+
+
+def parse_google_ip_ranges(text: str, ip_version: int = 4) -> list[str]:
+    _validate_ip_version(ip_version)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid Google IP ranges JSON: {e}") from e
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid Google IP ranges JSON: expected object")
+
+    entries = payload.get("prefixes")
+    if not isinstance(entries, list):
+        raise ValueError("Invalid Google IP ranges JSON: missing prefixes")
+
+    cidr_key = "ipv4Prefix" if ip_version == 4 else "ipv6Prefix"
+    cidrs: list[str] = []
+    seen: set[str] = set()
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        raw_cidr = item.get(cidr_key)
+        if not isinstance(raw_cidr, str):
+            continue
+        cidr = _parse_cidr(raw_cidr.strip(), raw_cidr, "google-ip-ranges", ip_version)
+        if cidr is not None and cidr not in seen:
+            seen.add(cidr)
+            cidrs.append(cidr)
+    return cidrs
+
+
+def parse_bgp_asns(text: str) -> dict[int, str]:
+    asns: dict[int, str] = {}
+    reader = csv.DictReader(io.StringIO(text))
+    for row in reader:
+        raw_asn = (row.get("asn") or "").strip()
+        name = (row.get("name") or "").strip()
+        if raw_asn.startswith("AS") and raw_asn[2:].isdigit() and name:
+            asns[int(raw_asn[2:])] = name
+    return asns
+
+
+def parse_bgp_table(text: str) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    v4_entries: list[tuple[str, int]] = []
+    v6_entries: list[tuple[str, int]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        cidr, asn_str = parts
+        if "/" not in cidr or not asn_str.isdigit():
+            continue
+        asn = int(asn_str)
+        if ":" in cidr:
+            v6_entries.append((cidr, asn))
+        else:
+            v4_entries.append((cidr, asn))
+    return v4_entries, v6_entries

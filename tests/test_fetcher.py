@@ -6,19 +6,31 @@ import requests
 from dobby_routes.fetcher import (
     _USER_AGENT,
     APNIC_URL,
+    AWS_IP_RANGES_URL,
+    BGP_ASNS_URL,
+    BGP_TABLE_URL,
     CHNROUTES2_FALLBACK_URL,
     CHNROUTES2_URL,
+    CLOUDFLARE_IPV4_URL,
+    CLOUDFLARE_IPV6_URL,
     GITHUB_CHINA_URL,
     GITHUB_CHINA_URL_V6,
     GITHUB_OPERATOR_URLS,
     GITHUB_OPERATOR_URLS_V6,
+    GOOGLE_IP_RANGES_URL,
     MAX_CIDR_SOURCE_BYTES,
     fetch_all_operators,
     fetch_all_operators_v6,
     fetch_apnic,
+    fetch_aws_ip_ranges,
+    fetch_bgp_asns,
+    fetch_bgp_table,
     fetch_china_v6,
     fetch_chnroutes2,
     fetch_cidr_source,
+    fetch_cloudflare_v4,
+    fetch_cloudflare_v6,
+    fetch_google_ip_ranges,
     fetch_operator,
     fetch_operator_v6,
     fetch_url,
@@ -374,3 +386,27 @@ def test_ipv6_urls_and_fetchers():
 
     with pytest.raises(ValueError, match="Unknown operator"):
         fetch_operator_v6("unknown_v6")
+
+
+def test_extended_source_urls_and_fetchers():
+    assert "cstnet" in GITHUB_OPERATOR_URLS
+    assert "cstnet" in GITHUB_OPERATOR_URLS_V6
+    assert "github.com/helixzz/dobby-routes" in _USER_AGENT
+    for url in (
+        AWS_IP_RANGES_URL,
+        CLOUDFLARE_IPV4_URL,
+        CLOUDFLARE_IPV6_URL,
+        GOOGLE_IP_RANGES_URL,
+        BGP_TABLE_URL,
+        BGP_ASNS_URL,
+    ):
+        assert url.startswith("https://")
+
+    with patch("dobby_routes.fetcher.fetch_url", return_value="ok") as mock_fetch:
+        assert fetch_aws_ip_ranges() == "ok"
+        assert fetch_cloudflare_v4() == "ok"
+        assert fetch_cloudflare_v6() == "ok"
+        assert fetch_google_ip_ranges() == "ok"
+        assert fetch_bgp_table() == "ok"
+        assert fetch_bgp_asns() == "ok"
+    assert mock_fetch.call_count == 6

@@ -8,7 +8,11 @@ from dobby_routes.parser import (
     apnic_entry_to_cidrs,
     load_cidr_directory,
     parse_apnic_delegated,
+    parse_aws_ip_ranges,
+    parse_bgp_asns,
+    parse_bgp_table,
     parse_cidr_list,
+    parse_google_ip_ranges,
     parse_local_cidr_list,
 )
 
@@ -312,3 +316,54 @@ def test_load_cidr_directory_ipv6(tmp_path):
         cidrs=["2400:3200::/32"],
         urls=["https://example.com/routes.txt"],
     )
+
+
+def test_parse_aws_ip_ranges_filters_cn_regions():
+    body = """{
+      "prefixes": [
+        {"ip_prefix": "52.80.0.0/16", "region": "cn-north-1"},
+        {"ip_prefix": "52.80.0.0/16", "region": "cn-north-1"},
+        {"ip_prefix": "54.222.0.0/16", "region": "cn-northwest-1"},
+        {"ip_prefix": "3.0.0.0/15", "region": "ap-southeast-1"}
+      ],
+      "ipv6_prefixes": [
+        {"ipv6_prefix": "2406:dafe::/32", "region": "cn-north-1"},
+        {"ipv6_prefix": "2600:1f18::/32", "region": "us-east-1"}
+      ]
+    }"""
+    assert parse_aws_ip_ranges(body, ip_version=4) == ["52.80.0.0/16", "54.222.0.0/16"]
+    assert parse_aws_ip_ranges(body, ip_version=6) == ["2406:dafe::/32"]
+
+
+def test_parse_aws_ip_ranges_rejects_invalid_json():
+    with pytest.raises(ValueError, match="Invalid AWS IP ranges JSON"):
+        parse_aws_ip_ranges("{not json", ip_version=4)
+
+
+def test_parse_google_ip_ranges_extracts_v4_and_v6():
+    body = """{
+      "prefixes": [
+        {"ipv4Prefix": "8.8.8.0/24"},
+        {"ipv4Prefix": "8.8.8.0/24"},
+        {"ipv6Prefix": "2001:4860::/32"}
+      ]
+    }"""
+    assert parse_google_ip_ranges(body, ip_version=4) == ["8.8.8.0/24"]
+    assert parse_google_ip_ranges(body, ip_version=6) == ["2001:4860::/32"]
+
+
+def test_parse_google_ip_ranges_rejects_invalid_json():
+    with pytest.raises(ValueError, match="Invalid Google IP ranges JSON"):
+        parse_google_ip_ranges("[]", ip_version=4)
+
+
+def test_parse_bgp_asns_and_table():
+    asns_csv = "asn,name,class,cc\nAS4134,CHINANET-BACKBONE,Eyeball,CN\nBAD,Ignore,Unknown,US\n"
+    assert parse_bgp_asns(asns_csv) == {4134: "CHINANET-BACKBONE"}
+
+    table_txt = (
+        "# comment\n1.0.1.0/24 4134\n2400:3200::/32 37963\nbad-line\n1.0.2.0/24 not-an-asn\n"
+    )
+    v4, v6 = parse_bgp_table(table_txt)
+    assert v4 == [("1.0.1.0/24", 4134)]
+    assert v6 == [("2400:3200::/32", 37963)]
