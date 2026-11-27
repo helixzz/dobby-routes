@@ -21,11 +21,17 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# Generate all route tables (default output to ./output/)
+# Generate all IPv4 route tables (default output to ./output/)
 dobby-routes
 
-# Specify output directory
-dobby-routes --output-dir /path/to/output
+# Generate both IPv4 and IPv6 route tables
+dobby-routes --ipv6
+
+# Specify output directory and optional stats JSON
+dobby-routes --output-dir /path/to/output --stats-json /path/to/stats.json
+
+# Enforce minimum route count guardrails before writing files
+dobby-routes --min-routes 4000 --min-inverse-routes 8000
 
 # Override repository-local route list directories
 dobby-routes --allowlist-dir /path/to/allowlists --denylist-dir /path/to/denylists
@@ -76,15 +82,18 @@ least one route. A denylist by itself is not a source of forward routes. Local-o
 the `CN` annotation unless they also match a fetched operator route.
 
 The checked-in `denylists/telegram.txt` includes Telegram's official CIDR source. Its IPv4 ranges
-are removed from forward routes and therefore covered by the inverse route table; its IPv6 entries
-are skipped. This built-in URL is pinned to reviewed IPv4 ranges: an upstream addition outside that
-scope fails generation until maintainers review and update the approved scope. Other custom URL
-files are trusted local configuration and are not constrained to Telegram's reviewed scope. Local
-includes are loaded regardless of the remote-source skip flags.
+are removed from forward routes and therefore covered by the inverse route table; when `--ipv6` is
+enabled, its IPv6 entries are likewise removed from IPv6 forward routes and covered by the IPv6
+inverse table (otherwise IPv6 entries are skipped with a warning). This built-in URL is pinned to
+reviewed IPv4 and IPv6 ranges: an upstream addition outside those scopes fails generation until
+maintainers review and update the approved scope. Other custom URL files are trusted local
+configuration and are not constrained to Telegram's reviewed scope. Local includes are loaded
+regardless of the remote-source skip flags.
 
 ## Output Files
 
-The tool generates three files:
+By default, the tool generates three IPv4 files (and three additional IPv6 files when `--ipv6` is
+passed):
 
 ### `cn_routes_annotated.txt`
 
@@ -130,20 +139,28 @@ Fully optimized.
 8.0.0.0/7
 ```
 
+### `cn_routes6.txt`, `cn_routes6_annotated.txt`, `cn_routes6_inverse.txt` (`--ipv6`)
+
+Equivalent IPv6 forward, annotated, and inverse route tables. IPv6 routes are filtered to IANA
+globally routable unicast space (`2000::/3` minus documentation, Teredo, 6to4, benchmarking, and
+other special-purpose blocks), and `cn_routes6_inverse.txt` is the complement within that routable
+IPv6 universe.
+
 ## Data Sources
 
 | Source | URL | Update Frequency |
 |--------|-----|------------------|
-| APNIC Delegated | `ftp.apnic.net/stats/apnic/delegated-apnic-latest` | Daily |
-| China Telecom | `gaoyifan/china-operator-ip` (chinanet.txt) | Daily |
-| China Unicom | `gaoyifan/china-operator-ip` (unicom.txt) | Daily |
-| China Mobile | `gaoyifan/china-operator-ip` (cmcc.txt) | Daily |
-| CERNET | `gaoyifan/china-operator-ip` (cernet.txt) | Daily |
+| APNIC Delegated (IPv4 & IPv6) | `ftp.apnic.net/stats/apnic/delegated-apnic-latest` | Daily |
+| China Telecom | `gaoyifan/china-operator-ip` (`chinanet.txt`, `chinanet6.txt`) | Daily |
+| China Unicom | `gaoyifan/china-operator-ip` (`unicom.txt`, `unicom6.txt`) | Daily |
+| China Mobile | `gaoyifan/china-operator-ip` (`cmcc.txt`, `cmcc6.txt`) | Daily |
+| CERNET | `gaoyifan/china-operator-ip` (`cernet.txt`, `cernet6.txt`) | Daily |
+| China IPv6 aggregate | `gaoyifan/china-operator-ip` (`china6.txt`) | Daily |
 | chnroutes2 | `chnroutes2.cdn.skk.moe` optimized list; fallback to `misakaio/chnroutes2` | 2 hours / hourly fallback |
 
 ## Pre-built Route Tables
 
-Route tables are updated daily via GitHub Actions and published to the [`data`](https://github.com/helixzz/dobby-routes/tree/data) branch. The scheduled workflow automatically uses the repository's `allowlists/` and `denylists/` directories with explicit workspace paths, so committed local route rules are included in every update.
+Route tables are updated daily via GitHub Actions and published to the [`data`](https://github.com/helixzz/dobby-routes/tree/data) branch. The scheduled workflow automatically uses the repository's `allowlists/` and `denylists/` directories with explicit workspace paths, enables `--ipv6`, enforces minimum route count guardrails, skips no-op timestamp-only updates, and retains the last 30 days of nightly releases.
 
 Direct download links:
 
@@ -151,6 +168,9 @@ Direct download links:
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_annotated.txt
 https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes_inverse.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_annotated.txt
+https://raw.githubusercontent.com/helixzz/dobby-routes/data/cn_routes6_inverse.txt
 ```
 
 ## Running Tests

@@ -1,3 +1,4 @@
+import json
 import os
 from argparse import Namespace
 from unittest.mock import patch
@@ -7,7 +8,11 @@ import requests
 from netaddr import IPNetwork, IPSet
 
 from dobby_routes.cli import _run, build_arg_parser, main
-from dobby_routes.fetcher import REVIEWED_CIDR_SOURCE_SCOPES, TELEGRAM_CIDR_SOURCE_URL
+from dobby_routes.fetcher import (
+    REVIEWED_CIDR_SOURCE_SCOPES,
+    REVIEWED_CIDR_SOURCE_SCOPES_V6,
+    TELEGRAM_CIDR_SOURCE_URL,
+)
 
 TELEGRAM_CIDRS = [
     "91.108.56.0/22",
@@ -455,3 +460,183 @@ def test_main_catches_keyboard_interrupt(mock_run):
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 130
+
+
+def test_new_cli_flags():
+    parser = build_arg_parser()
+    args = parser.parse_args(
+        [
+            "--ipv6",
+            "--min-routes",
+            "4000",
+            "--min-inverse-routes",
+            "8000",
+            "--min-ipv6-routes",
+            "1500",
+            "--min-ipv6-inverse-routes",
+            "10000",
+            "--stats-json",
+            "/tmp/stats.json",
+        ]
+    )
+    assert args.ipv6 is True
+    assert args.min_routes == 4000
+    assert args.min_inverse_routes == 8000
+    assert args.min_ipv6_routes == 1500
+    assert args.min_ipv6_inverse_routes == 10000
+    assert args.stats_json == "/tmp/stats.json"
+
+
+SAMPLE_APNIC_DUAL_STACK = (
+    "apnic|CN|ipv4|1.0.1.0|256|20110414|allocated\n"
+    "apnic|CN|ipv6|2400:3200::|32|20120608|allocated\n"
+)
+SAMPLE_OPERATOR_V6 = "2400:3200::/32\n"
+SAMPLE_CHINA_V6 = "2407:c000::/32\n"
+TELEGRAM_DUAL_STACK = (
+    "\n".join(TELEGRAM_CIDRS)
+    + "\n"
+    + "\n".join(REVIEWED_CIDR_SOURCE_SCOPES_V6[TELEGRAM_CIDR_SOURCE_URL])
+    + "\n"
+)
+
+
+@patch("dobby_routes.cli.fetch_cidr_source", return_value=TELEGRAM_DUAL_STACK)
+@patch("dobby_routes.cli.fetch_china_v6", return_value=SAMPLE_CHINA_V6)
+@patch(
+    "dobby_routes.cli.fetch_all_operators_v6",
+    return_value={"chinanet": SAMPLE_OPERATOR_V6},
+)
+@patch("dobby_routes.cli.fetch_chnroutes2", return_value=SAMPLE_CHNROUTES2)
+@patch("dobby_routes.cli.fetch_all_operators", side_effect=_mock_fetch_all_operators)
+@patch("dobby_routes.cli.fetch_apnic", return_value=SAMPLE_APNIC_DUAL_STACK)
+def test_run_full_pipeline_with_ipv6_and_stats_json(
+    mock_apnic,
+    mock_ops,
+    mock_chn,
+    mock_ops_v6,
+    mock_china_v6,
+    mock_include,
+    tmp_path,
+):
+    denylist_dir = tmp_path / "denylists"
+    denylist_dir.mkdir()
+    (denylist_dir / "telegram.txt").write_text(
+        f"@include {TELEGRAM_CIDR_SOURCE_URL}\n",
+        encoding="utf-8",
+    )
+    stats_path = tmp_path / "meta" / "stats.json"
+    args = Namespace(
+        output_dir=str(tmp_path),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(denylist_dir),
+        skip_apnic=False,
+        skip_github=False,
+        ipv6=True,
+        min_routes=1,
+        min_inverse_routes=1,
+        min_ipv6_routes=1,
+        min_ipv6_inverse_routes=1,
+        stats_json=str(stats_path),
+        verbose=False,
+    )
+
+    _run(args)
+
+    for fname in (
+        "cn_routes.txt",
+        "cn_routes_annotated.txt",
+        "cn_routes_inverse.txt",
+        "cn_routes6.txt",
+        "cn_routes6_annotated.txt",
+        "cn_routes6_inverse.txt",
+    ):
+        assert os.path.isfile(os.path.join(str(tmp_path), fname))
+
+    mock_apnic.assert_called_once()
+    mock_include.assert_called_once_with(TELEGRAM_CIDR_SOURCE_URL)
+    mock_ops_v6.assert_called_once()
+    mock_china_v6.assert_called_once()
+
+    v6_routes = _read_data_lines(os.path.join(str(tmp_path), "cn_routes6.txt"))
+    v6_inverse = _read_data_lines(os.path.join(str(tmp_path), "cn_routes6_inverse.txt"))
+    assert "2400:3200::/32" in v6_routes
+    assert "2407:c000::/32" in v6_routes
+    assert IPNetwork("2a0a:f280::/32") in IPSet(v6_inverse)
+
+    stats = json.loads(stats_path.read_text(encoding="utf-8"))
+    assert stats["ipv4"]["forward"] > 0
+    assert stats["ipv6"]["forward"] == len(v6_routes)
+    assert stats["ipv6"]["inverse"] == len(v6_inverse)
+
+
+@patch(
+    "dobby_routes.cli.fetch_cidr_source",
+    return_value="91.108.56.0/22\n2606:4700::/32\n",
+)
+def test_run_telegram_include_rejects_out_of_scope_ipv6(mock_fetch_cidr_source, tmp_path):
+    allowlist_dir = tmp_path / "allowlists"
+    denylist_dir = tmp_path / "denylists"
+    allowlist_dir.mkdir()
+    denylist_dir.mkdir()
+    (allowlist_dir / "local.txt").write_text("1.1.1.0/24\n2400:3200::/32\n", encoding="utf-8")
+    (denylist_dir / "telegram.txt").write_text(
+        f"@include {TELEGRAM_CIDR_SOURCE_URL}\n",
+        encoding="utf-8",
+    )
+    args = Namespace(
+        output_dir=str(tmp_path),
+        allowlist_dir=str(allowlist_dir),
+        denylist_dir=str(denylist_dir),
+        skip_apnic=True,
+        skip_github=True,
+        ipv6=True,
+        min_routes=0,
+        min_inverse_routes=0,
+        min_ipv6_routes=0,
+        min_ipv6_inverse_routes=0,
+        stats_json=None,
+        verbose=False,
+    )
+
+    with pytest.raises(ValueError, match="outside reviewed scope"):
+        _run(args)
+
+    assert not os.path.exists(os.path.join(str(tmp_path), "cn_routes.txt"))
+    assert not os.path.exists(os.path.join(str(tmp_path), "cn_routes6.txt"))
+
+
+@patch("dobby_routes.cli.fetch_apnic", return_value=SAMPLE_APNIC)
+def test_run_guardrail_rejects_insufficient_routes_without_writing_files(mock_apnic, tmp_path):
+    args = Namespace(
+        output_dir=str(tmp_path),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(tmp_path / "denylists"),
+        skip_apnic=False,
+        skip_github=True,
+        ipv6=False,
+        min_routes=100,
+        min_inverse_routes=0,
+        min_ipv6_routes=0,
+        min_ipv6_inverse_routes=0,
+        stats_json=None,
+        verbose=False,
+    )
+
+    with pytest.raises(ValueError, match="IPv4 forward routes guardrail failed"):
+        _run(args)
+
+    assert not os.path.exists(os.path.join(str(tmp_path), "cn_routes.txt"))
+
+
+@patch("dobby_routes.cli.fetch_apnic", return_value="# empty\n")
+def test_run_empty_apnic_fails_closed(mock_apnic, tmp_path):
+    with pytest.raises(ValueError, match="APNIC source returned no usable IPv4 CIDRs"):
+        _run(_make_args(tmp_path, skip_github=True))
+
+
+@patch("dobby_routes.cli.fetch_chnroutes2", return_value="# empty\n")
+@patch("dobby_routes.cli.fetch_all_operators", side_effect=_mock_fetch_all_operators)
+def test_run_empty_chnroutes2_fails_closed(mock_ops, mock_chn, tmp_path):
+    with pytest.raises(ValueError, match="chnroutes2 source returned no usable IPv4 CIDRs"):
+        _run(_make_args(tmp_path, skip_apnic=True))

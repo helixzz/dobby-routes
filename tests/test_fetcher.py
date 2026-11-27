@@ -9,13 +9,18 @@ from dobby_routes.fetcher import (
     CHNROUTES2_FALLBACK_URL,
     CHNROUTES2_URL,
     GITHUB_CHINA_URL,
+    GITHUB_CHINA_URL_V6,
     GITHUB_OPERATOR_URLS,
+    GITHUB_OPERATOR_URLS_V6,
     MAX_CIDR_SOURCE_BYTES,
     fetch_all_operators,
+    fetch_all_operators_v6,
     fetch_apnic,
+    fetch_china_v6,
     fetch_chnroutes2,
     fetch_cidr_source,
     fetch_operator,
+    fetch_operator_v6,
     fetch_url,
     validate_cidr_source_url,
 )
@@ -322,3 +327,50 @@ def test_fetch_cidr_source_rejects_oversized_response():
 def test_fetch_url_rejects_non_positive_retries():
     with pytest.raises(ValueError, match="retries must be greater than zero"):
         fetch_url("https://example.com/", retries=0)
+
+
+@patch("dobby_routes.fetcher.time.sleep")
+def test_fetch_url_does_not_retry_on_404(mock_sleep):
+    error = requests.HTTPError(response=MagicMock(status_code=404))
+    bad_response = MagicMock(raise_for_status=MagicMock(side_effect=error))
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=bad_response) as mock_get:
+        with pytest.raises(requests.HTTPError):
+            fetch_url("https://example.com/missing", retries=3)
+
+    mock_get.assert_called_once()
+    mock_sleep.assert_not_called()
+
+
+@patch("dobby_routes.fetcher.time.sleep")
+def test_fetch_url_retries_on_429(mock_sleep):
+    error = requests.HTTPError(response=MagicMock(status_code=429))
+    ok_response = MagicMock()
+    ok_response.text = "ok"
+    ok_response.raise_for_status = MagicMock()
+
+    with patch(
+        "dobby_routes.fetcher.requests.get",
+        side_effect=[MagicMock(raise_for_status=MagicMock(side_effect=error)), ok_response],
+    ):
+        result = fetch_url("https://example.com/rate-limited", retries=2)
+
+    assert result == "ok"
+    mock_sleep.assert_called_once_with(1)
+
+
+def test_ipv6_urls_and_fetchers():
+    assert set(GITHUB_OPERATOR_URLS_V6.keys()) == set(GITHUB_OPERATOR_URLS.keys())
+    assert GITHUB_CHINA_URL_V6.startswith("https://")
+    mock_response = MagicMock()
+    mock_response.text = "2400:3200::/32\n"
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("dobby_routes.fetcher.requests.get", return_value=mock_response):
+        assert fetch_operator_v6("chinanet") == "2400:3200::/32\n"
+        all_v6 = fetch_all_operators_v6()
+        assert list(all_v6.keys()) == list(GITHUB_OPERATOR_URLS_V6.keys())
+        assert fetch_china_v6() == "2400:3200::/32\n"
+
+    with pytest.raises(ValueError, match="Unknown operator"):
+        fetch_operator_v6("unknown_v6")

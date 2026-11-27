@@ -2,10 +2,14 @@ from netaddr import IPNetwork, IPSet
 
 from dobby_routes.optimizer import (
     NON_ROUTABLE_SET,
+    NON_ROUTABLE_SET_V6,
     ROUTABLE_UNIVERSE,
+    ROUTABLE_UNIVERSE_V6,
     annotate_routes,
     compute_complement,
+    compute_complement_v6,
     filter_non_routable,
+    filter_non_routable_v6,
     merge_routes,
     optimize_routes,
 )
@@ -209,3 +213,71 @@ def test_complement_excludes_all_non_routable():
 def test_routable_universe_has_no_private_ranges():
     for cidr in NON_ROUTABLE_SET.iter_cidrs():
         assert cidr not in ROUTABLE_UNIVERSE
+
+
+def test_annotate_routes_overlapping_operators_are_disjoint_and_combined():
+    operator_cidrs = {
+        "chinanet": ["1.0.0.0/23"],
+        "cmcc": ["1.0.1.0/24"],
+    }
+    all_merged = IPSet(["1.0.0.0/23", "2.0.0.0/24"])
+
+    result = annotate_routes(operator_cidrs, all_merged)
+
+    assert result == [
+        ("1.0.0.0/24", "AS4134/AS4812 China Telecom"),
+        ("1.0.1.0/24", "AS4134/AS4812 China Telecom, AS9808 China Mobile"),
+        ("2.0.0.0/24", "CN"),
+    ]
+    seen = IPSet()
+    for cidr, _ in result:
+        net = IPNetwork(cidr)
+        assert (seen & IPSet([net])) == IPSet()
+        seen.add(net)
+    assert seen == all_merged
+
+
+def test_annotate_routes_operator_order_is_deterministic():
+    all_merged = IPSet(["1.0.1.0/24"])
+    first = annotate_routes(
+        {"unicom": ["1.0.1.0/24"], "chinanet": ["1.0.1.0/24"]},
+        all_merged,
+    )
+    second = annotate_routes(
+        {"chinanet": ["1.0.1.0/24"], "unicom": ["1.0.1.0/24"]},
+        all_merged,
+    )
+    assert first == second
+
+
+def test_merge_routes_ipv6_adjacent_and_overlapping():
+    result = merge_routes([["2400:3200::/33", "2400:3200:8000::/33"], ["2400:3200::/32"]])
+    assert optimize_routes(result) == ["2400:3200::/32"]
+
+
+def test_filter_non_routable_v6_removes_special_and_non_global_ranges():
+    ipset = IPSet(
+        [
+            "::1/128",
+            "fc00::/7",
+            "fe80::/10",
+            "ff00::/8",
+            "2001::/32",
+            "2001:db8::/32",
+            "2002::/16",
+            "3fff::/20",
+            "2400:3200::/32",
+        ]
+    )
+    result = filter_non_routable_v6(ipset)
+    assert optimize_routes(result) == ["2400:3200::/32"]
+
+
+def test_compute_complement_v6_plus_original_equals_routable_universe_v6():
+    ipset = IPSet(["2400:3200::/32"])
+    complement = compute_complement_v6(ipset)
+    complement_set = IPSet(complement)
+    assert (complement_set & NON_ROUTABLE_SET_V6) == IPSet()
+    assert (complement_set | ipset) == ROUTABLE_UNIVERSE_V6
+    networks = [IPNetwork(c) for c in complement]
+    assert networks == sorted(networks)

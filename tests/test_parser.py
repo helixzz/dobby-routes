@@ -246,3 +246,69 @@ def test_parse_cidr_list_skips_ipv6_with_source_warning(caplog):
 
     assert result == ["8.8.8.0/24"]
     assert "Skipping IPv6 CIDR in mixed.txt" in caplog.text
+
+
+def test_parse_apnic_delegated_skips_non_routable_statuses(caplog):
+    caplog.set_level(logging.WARNING)
+    text = (
+        "apnic|CN|ipv4|1.0.1.0|256|20110414|allocated\n"
+        "apnic|CN|ipv4|1.0.2.0|256|20110414|assigned\n"
+        "apnic|CN|ipv4|1.0.3.0|256|20110414|available\n"
+        "apnic|CN|ipv4|1.0.4.0|256|20110414|reserved\n"
+    )
+    entries = parse_apnic_delegated(text)
+    assert [e.start_ip for e in entries] == ["1.0.1.0", "1.0.2.0"]
+    assert "available" in caplog.text
+    assert "reserved" in caplog.text
+
+
+def test_parse_apnic_delegated_ipv6():
+    entries = parse_apnic_delegated(SAMPLE_APNIC, ip_version=6)
+    assert len(entries) == 1
+    assert entries[0].start_ip == "2407:c000::"
+    assert entries[0].count == 32
+    assert entries[0].ip_version == 6
+    assert apnic_entry_to_cidrs(entries[0]) == ["2407:c000::/32"]
+
+
+@pytest.mark.parametrize(
+    ("start_ip", "prefix_len"),
+    [
+        ("2407:c000::", 0),
+        ("2407:c000::", -1),
+        ("2407:c000::", 129),
+        ("not-ipv6", 32),
+    ],
+)
+def test_apnic_entry_to_cidrs_ipv6_invalid(start_ip, prefix_len):
+    entry = ApnicEntry(
+        start_ip=start_ip,
+        count=prefix_len,
+        date="20120608",
+        status="allocated",
+        ip_version=6,
+    )
+    assert apnic_entry_to_cidrs(entry) == []
+
+
+def test_parse_apnic_delegated_rejects_invalid_ip_version():
+    with pytest.raises(ValueError, match="Unsupported IP version"):
+        parse_apnic_delegated(SAMPLE_APNIC, ip_version=5)
+
+
+def test_parse_cidr_list_ipv6_extracts_v6_and_skips_v4():
+    result = parse_cidr_list("8.8.8.0/24\n2001:4860:0000::1/32\n", source="mixed.txt", ip_version=6)
+    assert result == ["2001:4860::/32"]
+
+
+def test_load_cidr_directory_ipv6(tmp_path):
+    directory = tmp_path / "lists"
+    directory.mkdir()
+    (directory / "mixed.txt").write_text(
+        "8.8.8.0/24\n2400:3200::/32\n@include https://example.com/routes.txt\n",
+        encoding="utf-8",
+    )
+    assert load_cidr_directory(str(directory), ip_version=6) == CidrSources(
+        cidrs=["2400:3200::/32"],
+        urls=["https://example.com/routes.txt"],
+    )

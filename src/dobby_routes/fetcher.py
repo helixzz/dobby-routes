@@ -28,7 +28,16 @@ GITHUB_OPERATOR_URLS = {
     "cmcc": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cmcc.txt",
     "cernet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cernet.txt",
 }
+GITHUB_OPERATOR_URLS_V6 = {
+    "chinanet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/chinanet6.txt",
+    "unicom": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/unicom6.txt",
+    "cmcc": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cmcc6.txt",
+    "cernet": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/cernet6.txt",
+}
 GITHUB_CHINA_URL = "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/china.txt"
+GITHUB_CHINA_URL_V6 = (
+    "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/ip-lists/china6.txt"
+)
 CHNROUTES2_URL = "https://chnroutes2.cdn.skk.moe/chnroutes.txt"
 CHNROUTES2_FALLBACK_URL = (
     "https://raw.githubusercontent.com/misakaio/chnroutes2/master/chnroutes.txt"
@@ -47,10 +56,27 @@ REVIEWED_CIDR_SOURCE_SCOPES = {
         "185.76.151.0/24",
     ),
 }
+REVIEWED_CIDR_SOURCE_SCOPES_V6 = {
+    TELEGRAM_CIDR_SOURCE_URL: (
+        "2001:b28:f23d::/48",
+        "2001:b28:f23f::/48",
+        "2001:67c:4e8::/48",
+        "2001:b28:f23c::/48",
+        "2a0a:f280::/32",
+    ),
+}
 
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEOUT = 30
 MAX_CIDR_SOURCE_BYTES = 5 * 1024 * 1024
+
+
+def _is_retryable_request_error(exc: requests.RequestException) -> bool:
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        status = exc.response.status_code
+        if isinstance(status, int) and 400 <= status < 500 and status not in (408, 429):
+            return False
+    return True
 
 
 def fetch_url(
@@ -83,6 +109,8 @@ def fetch_url(
             response.raise_for_status()
             return response.text
         except requests.RequestException as e:
+            if not _is_retryable_request_error(e):
+                raise
             last_exc = e
             if attempt < retries - 1:
                 wait = 2**attempt
@@ -183,16 +211,32 @@ def fetch_operator(operator: str) -> str:
     return fetch_url(GITHUB_OPERATOR_URLS[operator])
 
 
-def fetch_all_operators() -> dict[str, str]:
-    results: dict[str, str] = {}
+def fetch_operator_v6(operator: str) -> str:
+    if operator not in GITHUB_OPERATOR_URLS_V6:
+        raise ValueError(f"Unknown operator: {operator}")
+    return fetch_url(GITHUB_OPERATOR_URLS_V6[operator])
+
+
+def _fetch_operator_map(urls: dict[str, str]) -> dict[str, str]:
+    fetched: dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {
-            executor.submit(fetch_url, url): name for name, url in GITHUB_OPERATOR_URLS.items()
-        }
+        futures = {executor.submit(fetch_url, url): name for name, url in urls.items()}
         for future in as_completed(futures):
             name = futures[future]
-            results[name] = future.result()
-    return results
+            fetched[name] = future.result()
+    return {name: fetched[name] for name in urls}
+
+
+def fetch_all_operators() -> dict[str, str]:
+    return _fetch_operator_map(GITHUB_OPERATOR_URLS)
+
+
+def fetch_all_operators_v6() -> dict[str, str]:
+    return _fetch_operator_map(GITHUB_OPERATOR_URLS_V6)
+
+
+def fetch_china_v6() -> str:
+    return fetch_url(GITHUB_CHINA_URL_V6)
 
 
 def fetch_chnroutes2() -> str:

@@ -1,6 +1,7 @@
+import json
 import os
 
-from dobby_routes.output import write_annotated, write_complement, write_optimized
+from dobby_routes.output import write_annotated, write_complement, write_optimized, write_stats
 
 
 def test_write_annotated_creates_file(tmp_path):
@@ -126,3 +127,28 @@ def test_write_functions_use_shared_timestamp(tmp_path):
     for path in (a, o, c):
         content = open(path).read()
         assert ts in content
+
+
+def test_write_ipv6_headers_and_body(tmp_path):
+    ts = "2026-11-26 00:00:00"
+    a = str(tmp_path / "a6.txt")
+    o = str(tmp_path / "o6.txt")
+    c = str(tmp_path / "c6.txt")
+    write_annotated(a, [("2400:3200::/32", "CN")], timestamp=ts, ip_version=6)
+    write_optimized(o, ["2400:3200::/32"], timestamp=ts, ip_version=6)
+    write_complement(c, ["2000::/16"], timestamp=ts, ip_version=6)
+
+    assert "# China mainland IPv6 route table (annotated)" in open(a, encoding="utf-8").read()
+    assert "# China mainland IPv6 route table (optimized)" in open(o, encoding="utf-8").read()
+    assert (
+        "# Inverse IPv6 route table (complement of China mainland IPv6 routes)"
+        in open(c, encoding="utf-8").read()
+    )
+
+
+def test_write_stats_json(tmp_path):
+    path = str(tmp_path / "stats.json")
+    payload = {"timestamp_utc": "2026-11-26 00:00:00", "ipv4": {"forward": 5751}}
+    write_stats(path, payload)
+    loaded = json.loads(open(path, encoding="utf-8").read())
+    assert loaded == payload

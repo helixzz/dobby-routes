@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-11-27
+
+### Added
+- Opt-in IPv6 route table generation via `--ipv6`, producing `cn_routes6.txt`, `cn_routes6_annotated.txt`, and `cn_routes6_inverse.txt` from APNIC delegated IPv6 allocations and `gaoyifan/china-operator-ip` IPv6 lists
+- `NON_ROUTABLE_RANGES_V6`, `NON_ROUTABLE_SET_V6`, `ROUTABLE_UNIVERSE_V6` (`2000::/3` minus IANA IPv6 special-purpose blocks), `filter_non_routable_v6()`, and `compute_complement_v6()` in `optimizer.py`
+- Reviewed IPv6 scope enforcement (`REVIEWED_CIDR_SOURCE_SCOPES_V6`) for Telegram's official CIDR source when `--ipv6` is enabled
+- Fail-closed publish guardrails: `--min-routes`, `--min-inverse-routes`, `--min-ipv6-routes`, `--min-ipv6-inverse-routes` (validated before writing output files), plus automatic fail-closed checks when any enabled remote source returns zero usable CIDRs
+- Optional `--stats-json <path>` flag and `write_stats()` writer for machine-readable run statistics
+- Real content-based diff detection (ignoring header timestamps), daily diff summary tables in Release Notes / GitHub Actions Job Summary, and 30-day nightly release retention pruning in `.github/workflows/update-routes.yml`
+- 25 new unit and integration tests covering IPv6 parsing/optimization/CLI, disjoint operator annotation, APNIC status validation, smart HTTP 4xx retries, guardrails, and stats output (169 tests total)
+
+### Changed
+- `merge_routes()` now batch-constructs `netaddr.IPSet` from validated networks instead of incremental per-CIDR `.add()`, delivering ~400x faster route merging (from ~74s to <0.2s in daily CI)
+- `annotate_routes()` now partitions merged routes into strictly disjoint CIDRs with deterministic multi-operator labels (e.g. `AS4134/AS4812 China Telecom, AS9808 China Mobile`) instead of emitting overlapping duplicates
+- `parse_apnic_delegated()` now explicitly accepts only `allocated` and `assigned` statuses and supports `ip_version=6`
+- `fetch_url()` no longer retries non-transient HTTP 4xx errors (still retries 408, 429, 5xx, and transport errors); `fetch_all_operators()` returns deterministic key order
+- `output.py` writers now explicitly specify `encoding="utf-8"` and support IPv6 headers via `ip_version`
+- CI workflows upgraded to `actions/checkout@v7` and `actions/setup-python@v7` (Node.js 24 native), Python 3.13 added to test matrix, and daily schedule shifted to `17 1 * * *` UTC to avoid midnight queue congestion
+
+### Fixed
+- Fixed nightly Release Notes displaying `cn_routes.txt` count instead of the actual `cn_routes_annotated.txt` count
+- Prevented empty daily commits and releases when only the UTC header timestamp changed
+
 ## [0.2.0] - 2026-04-16
 
 ### Added

@@ -2,7 +2,7 @@ name: Update Route Tables
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "17 1 * * *"
   workflow_dispatch:
 
 permissions:
@@ -14,13 +14,13 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
 
       - name: Install dependencies
@@ -31,37 +31,140 @@ jobs:
           dobby-routes \
             --output-dir "$GITHUB_WORKSPACE/output" \
             --allowlist-dir "$GITHUB_WORKSPACE/allowlists" \
-            --denylist-dir "$GITHUB_WORKSPACE/denylists"
+            --denylist-dir "$GITHUB_WORKSPACE/denylists" \
+            --ipv6 \
+            --min-routes 4000 \
+            --min-inverse-routes 8000 \
+            --min-ipv6-routes 1500 \
+            --min-ipv6-inverse-routes 10000 \
+            --stats-json /tmp/dobby-stats.json
+
+      - name: Detect route changes and prepare summary
+        id: diff-check
+        run: |
+          python3 - << 'EOF'
+          import json
+          import os
+          import subprocess
+          from collections import Counter
+          from datetime import datetime, timezone
+
+          files = [
+              "cn_routes.txt",
+              "cn_routes_inverse.txt",
+              "cn_routes_annotated.txt",
+              "cn_routes6.txt",
+              "cn_routes6_inverse.txt",
+              "cn_routes6_annotated.txt",
+          ]
+
+          def data_lines(text: str) -> list[str]:
+              return [
+                  line.strip()
+                  for line in text.splitlines()
+                  if line.strip() and not line.lstrip().startswith("#")
+              ]
+
+          with open("/tmp/dobby-stats.json", encoding="utf-8") as f:
+              stats = json.load(f)
+
+          any_changed = False
+          rows = []
+          for name in files:
+              rel_path = f"output/{name}"
+              with open(rel_path, encoding="utf-8") as f:
+                  new_lines = data_lines(f.read())
+              proc = subprocess.run(
+                  ["git", "show", f"HEAD:{rel_path}"],
+                  capture_output=True,
+                  text=True,
+              )
+              if proc.returncode == 0:
+                  old_lines = data_lines(proc.stdout)
+                  if new_lines != old_lines:
+                      any_changed = True
+                  old_c = Counter(old_lines)
+                  new_c = Counter(new_lines)
+                  added = sum((new_c - old_c).values())
+                  removed = sum((old_c - new_c).values())
+                  delta = f"+{added} / -{removed}" if (added or removed) else "0"
+              else:
+                  any_changed = True
+                  delta = f"+{len(new_lines)} (new)"
+              rows.append((name, len(new_lines), delta))
+
+          date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+          ipv4_stats = stats["ipv4"]
+          ipv6_stats = stats["ipv6"]
+
+          lines = [
+              f"Auto-generated route tables ({date_str} UTC)",
+              "",
+              "| File | Routes | Daily Diff |",
+              "|------|-------:|-----------:|",
+          ]
+          for name, count, delta in rows:
+              lines.append(f"| `{name}` | {count:,} | {delta} |")
+          lines.append("")
+          lines.append(f"IPv4 covered addresses: `{ipv4_stats['addresses']:,}`")
+          notes = "\n".join(lines) + "\n"
+
+          with open("/tmp/release-notes.md", "w", encoding="utf-8") as f:
+              f.write(notes)
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write("## Dobby Routes Update\n\n")
+                  if not any_changed:
+                      f.write("No effective route data changes detected (header timestamp only); commit and release skipped.\n\n")
+                  f.write(notes)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"changed={'true' if any_changed else 'false'}\n")
+              f.write(f"date={date_str}\n")
+              f.write(f"routes={ipv4_stats['forward']}\n")
+              f.write(f"inverse={ipv4_stats['inverse']}\n")
+              f.write(f"annotated={ipv4_stats['annotated']}\n")
+              f.write(f"routes6={ipv6_stats['forward']}\n")
+              f.write(f"inverse6={ipv6_stats['inverse']}\n")
+              f.write(f"annotated6={ipv6_stats['annotated']}\n")
+          EOF
 
       - name: Commit to main branch
-        id: commit-main
+        if: steps.diff-check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add output/cn_routes_annotated.txt output/cn_routes.txt output/cn_routes_inverse.txt
-          if git diff --cached --quiet; then
-            echo "No changes detected."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            DATE=$(date -u +%Y-%m-%d)
-            ROUTES=$(grep -c '^[^#]' output/cn_routes.txt || true)
-            INVERSE=$(grep -c '^[^#]' output/cn_routes_inverse.txt || true)
-            git commit -m "data: update route tables ${DATE}" \
-              -m "Forward routes: ${ROUTES}" \
-              -m "Inverse routes: ${INVERSE}"
-            git push origin main
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "date=${DATE}" >> "$GITHUB_OUTPUT"
-            echo "routes=${ROUTES}" >> "$GITHUB_OUTPUT"
-            echo "inverse=${INVERSE}" >> "$GITHUB_OUTPUT"
-          fi
+          git add \
+            output/cn_routes_annotated.txt \
+            output/cn_routes.txt \
+            output/cn_routes_inverse.txt \
+            output/cn_routes6_annotated.txt \
+            output/cn_routes6.txt \
+            output/cn_routes6_inverse.txt
+          DATE=${{ steps.diff-check.outputs.date }}
+          ROUTES=${{ steps.diff-check.outputs.routes }}
+          INVERSE=${{ steps.diff-check.outputs.inverse }}
+          ROUTES6=${{ steps.diff-check.outputs.routes6 }}
+          INVERSE6=${{ steps.diff-check.outputs.inverse6 }}
+          git commit -m "data: update route tables ${DATE}" \
+            -m "IPv4 forward: ${ROUTES}, inverse: ${INVERSE}" \
+            -m "IPv6 forward: ${ROUTES6}, inverse: ${INVERSE6}"
+          git push origin main
 
       - name: Update data branch
-        if: steps.commit-main.outputs.changed == 'true'
+        if: steps.diff-check.outputs.changed == 'true'
         run: |
-          cp output/cn_routes_annotated.txt /tmp/
-          cp output/cn_routes.txt /tmp/
-          cp output/cn_routes_inverse.txt /tmp/
+          for f in \
+            cn_routes_annotated.txt \
+            cn_routes.txt \
+            cn_routes_inverse.txt \
+            cn_routes6_annotated.txt \
+            cn_routes6.txt \
+            cn_routes6_inverse.txt; do
+            cp "output/${f}" "/tmp/${f}"
+          done
           git fetch origin data || true
           if git rev-parse --verify origin/data >/dev/null 2>&1; then
             git checkout data
@@ -69,22 +172,34 @@ jobs:
             git checkout --orphan data
             git rm -rf . 2>/dev/null || true
           fi
-          cp /tmp/cn_routes_annotated.txt .
-          cp /tmp/cn_routes.txt .
-          cp /tmp/cn_routes_inverse.txt .
-          git add cn_routes_annotated.txt cn_routes.txt cn_routes_inverse.txt
-          DATE=${{ steps.commit-main.outputs.date }}
-          git commit -m "data: update route tables ${DATE}"
-          git push origin data
+          for f in \
+            cn_routes_annotated.txt \
+            cn_routes.txt \
+            cn_routes_inverse.txt \
+            cn_routes6_annotated.txt \
+            cn_routes6.txt \
+            cn_routes6_inverse.txt; do
+            cp "/tmp/${f}" .
+          done
+          git add \
+            cn_routes_annotated.txt \
+            cn_routes.txt \
+            cn_routes_inverse.txt \
+            cn_routes6_annotated.txt \
+            cn_routes6.txt \
+            cn_routes6_inverse.txt
+          DATE=${{ steps.diff-check.outputs.date }}
+          if ! git diff --cached --quiet; then
+            git commit -m "data: update route tables ${DATE}"
+            git push origin data
+          fi
 
       - name: Create nightly release
-        if: steps.commit-main.outputs.changed == 'true'
+        if: steps.diff-check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          DATE=${{ steps.commit-main.outputs.date }}
-          ROUTES=${{ steps.commit-main.outputs.routes }}
-          INVERSE=${{ steps.commit-main.outputs.inverse }}
+          DATE=${{ steps.diff-check.outputs.date }}
           TAG="nightly-${DATE}"
 
           gh release delete "${TAG}" --yes 2>/dev/null || true
@@ -93,14 +208,48 @@ jobs:
           git checkout main
           gh release create "${TAG}" \
             --title "Nightly ${DATE}" \
-            --notes "Auto-generated route tables (${DATE} UTC)
-
-          | File | Routes |
-          |------|--------|
-          | cn_routes.txt | ${ROUTES} |
-          | cn_routes_inverse.txt | ${INVERSE} |
-          | cn_routes_annotated.txt | ${ROUTES} (annotated) |" \
+            --notes-file /tmp/release-notes.md \
             --latest \
             output/cn_routes.txt \
             output/cn_routes_annotated.txt \
-            output/cn_routes_inverse.txt
+            output/cn_routes_inverse.txt \
+            output/cn_routes6.txt \
+            output/cn_routes6_annotated.txt \
+            output/cn_routes6_inverse.txt
+
+      - name: Prune old nightly releases (keep 30 days)
+        if: steps.diff-check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - << 'EOF'
+          import json
+          import re
+          import subprocess
+          from datetime import datetime, timedelta, timezone
+
+          cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).date()
+          proc = subprocess.run(
+              ["gh", "release", "list", "--limit", "500", "--json", "tagName,isLatest"],
+              capture_output=True,
+              text=True,
+              check=True,
+          )
+          releases = json.loads(proc.stdout)
+          pattern = re.compile(r"^nightly-(\d{4}-\d{2}-\d{2})$")
+          to_delete = []
+          for rel in releases:
+              if rel.get("isLatest"):
+                  continue
+              tag = rel.get("tagName", "")
+              match = pattern.match(tag)
+              if not match:
+                  continue
+              rel_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+              if rel_date < cutoff:
+                  to_delete.append(tag)
+
+          for tag in to_delete[:30]:
+              print(f"Pruning old nightly release: {tag}")
+              subprocess.run(["gh", "release", "delete", tag, "--yes", "--cleanup-tag"], check=False)
+          EOF
