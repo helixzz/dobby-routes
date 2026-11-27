@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.2] - 2026-11-27
+
+### Fixed
+- Fixed `cn_routes_bgp_inverse.txt` and `cn_routes6_bgp_inverse.txt` swallowing domestic-only China mainland prefixes that are not announced to overseas `bgp.tools` BGP feeds (~7.29M IPs). BGP-minimized inverse tables now forbid the entire `final_routes` CN set and enforce a fail-closed zero-overlap invariant before writing output files
+- Added regression test `test_run_bgp_inverse_never_swallows_domestic_only_cn_routes` (192 tests total)
+
+### Added
+- Added optional `workflow_dispatch` input `bypass_drift_check` (defaults to `false`) in `.github/workflows/update-routes.yml` for intentional algorithm or source migrations
+
 ## [0.4.1] - 2026-11-27
 
 ### Added

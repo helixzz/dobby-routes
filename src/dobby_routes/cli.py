@@ -425,7 +425,11 @@ def _run(args: argparse.Namespace) -> None:
         )
         required_foreign_v4 = filter_non_routable((active_v4 - final_routes) | deny_routes_v4)
         bgp_fwd_v4 = minimize_routed_cidrs(required_cn_v4, required_foreign_v4, ROUTABLE_UNIVERSE)
-        bgp_inv_v4 = minimize_routed_cidrs(required_foreign_v4, required_cn_v4, ROUTABLE_UNIVERSE)
+        # Forbid ALL final CN routes (including domestic-only prefixes absent from overseas BGP)
+        # so BGP-minimized inverse tables never swallow any China mainland IP.
+        bgp_inv_v4 = minimize_routed_cidrs(required_foreign_v4, final_routes, ROUTABLE_UNIVERSE)
+        if merge_routes([bgp_inv_v4]) & final_routes:
+            raise ValueError("BGP-minimized IPv4 inverse table overlaps CN forward routes")
         logger.info(
             "BGP-minimized IPv4: %d forward, %d inverse",
             len(bgp_fwd_v4),
@@ -446,9 +450,9 @@ def _run(args: argparse.Namespace) -> None:
             bgp_fwd_v6 = minimize_routed_cidrs(
                 required_cn_v6, required_foreign_v6, ROUTABLE_UNIVERSE_V6
             )
-            bgp_inv_v6 = minimize_routed_cidrs(
-                required_foreign_v6, required_cn_v6, ROUTABLE_UNIVERSE_V6
-            )
+            bgp_inv_v6 = minimize_routed_cidrs(required_foreign_v6, final_v6, ROUTABLE_UNIVERSE_V6)
+            if merge_routes([bgp_inv_v6]) & final_v6:
+                raise ValueError("BGP-minimized IPv6 inverse table overlaps CN forward routes")
             logger.info(
                 "BGP-minimized IPv6: %d forward, %d inverse",
                 len(bgp_fwd_v6),

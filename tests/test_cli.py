@@ -878,3 +878,48 @@ def test_run_us_special_dir_generates_us_routes(
     assert us_v6 == ["2607:6bc0::/48"]
     stats = json.loads(stats_path.read_text(encoding="utf-8"))
     assert stats["us_special"] == {"ipv4": 2, "ipv6": 1}
+
+
+@patch("dobby_routes.cli.fetch_bgp_asns", return_value=SAMPLE_BGP_ASNS)
+@patch(
+    "dobby_routes.cli.fetch_bgp_table",
+    return_value="1.0.0.0/24 13335\n1.0.2.0/23 13335\n2001:4860::/32 15169\n",
+)
+@patch(
+    "dobby_routes.cli.fetch_apnic",
+    return_value=(
+        "apnic|CN|ipv4|1.0.1.0|256|20110414|allocated\n"
+        "apnic|CN|ipv6|2400:3200::|32|20120608|allocated\n"
+    ),
+)
+def test_run_bgp_inverse_never_swallows_domestic_only_cn_routes(
+    mock_apnic, mock_bgp_table, mock_bgp_asns, tmp_path
+):
+    # 1.0.1.0/24 and 2400:3200::/32 are allocated to CN in APNIC, but NOT present in overseas BGP.
+    # BGP-minimized inverse tables MUST still keep them strictly excluded (0 overlap with CN).
+    out_dir = tmp_path / "out"
+    args = Namespace(
+        output_dir=str(out_dir),
+        allowlist_dir=str(tmp_path / "allowlists"),
+        denylist_dir=str(tmp_path / "denylists"),
+        skip_apnic=False,
+        skip_github=True,
+        ipv6=True,
+        bgp=True,
+        verbose=False,
+    )
+
+    _run(args)
+
+    cn_v4 = IPSet(_read_data_lines(str(out_dir / "cn_routes.txt")))
+    bgp_inv_v4 = IPSet(_read_data_lines(str(out_dir / "cn_routes_bgp_inverse.txt")))
+    assert IPNetwork("1.0.1.0/24") in cn_v4
+    assert (cn_v4 & bgp_inv_v4) == IPSet()
+    assert IPNetwork("1.0.0.0/24") in bgp_inv_v4
+    assert IPNetwork("1.0.2.0/23") in bgp_inv_v4
+
+    cn_v6 = IPSet(_read_data_lines(str(out_dir / "cn_routes6.txt")))
+    bgp_inv_v6 = IPSet(_read_data_lines(str(out_dir / "cn_routes6_bgp_inverse.txt")))
+    assert IPNetwork("2400:3200::/32") in cn_v6
+    assert (cn_v6 & bgp_inv_v6) == IPSet()
+    assert IPNetwork("2001:4860::/32") in bgp_inv_v6

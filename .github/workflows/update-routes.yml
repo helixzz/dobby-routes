@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      bypass_drift_check:
+        description: "Skip ±15% baseline drift guardrail for intentional algorithm/source changes"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -85,6 +91,10 @@ jobs:
 
       - name: Generate route tables
         run: |
+          MAX_DRIFT=15
+          if [ "${{ inputs.bypass_drift_check }}" = "true" ]; then
+            MAX_DRIFT=0
+          fi
           dobby-routes \
             --output-dir "$GITHUB_WORKSPACE/output" \
             --allowlist-dir "$GITHUB_WORKSPACE/allowlists" \
@@ -101,7 +111,7 @@ jobs:
             --min-ipv6-routes 1500 \
             --min-ipv6-inverse-routes 10000 \
             --baseline-stats /tmp/baseline-stats.json \
-            --max-drift-pct 15 \
+            --max-drift-pct "$MAX_DRIFT" \
             --stats-json /tmp/dobby-stats.json
 
       - name: Detect route changes and prepare summary
